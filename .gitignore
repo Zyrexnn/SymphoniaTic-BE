@@ -1,0 +1,26 @@
+# Binaries
+server.exe
+*.exe
+*.exe font
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go build command
+bin/
+
+# Environment variables
+.env
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
