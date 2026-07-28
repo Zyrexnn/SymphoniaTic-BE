@@ -2,8 +2,11 @@ package controllers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
@@ -15,7 +18,7 @@ import (
 // GET /api/v1/events
 func GetEvents(c *fiber.Ctx) error {
 	rows, err := database.DB.Query(`
-		SELECT id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, description
+		SELECT id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description
 		FROM events
 		ORDER BY created_at ASC
 	`)
@@ -31,10 +34,12 @@ func GetEvents(c *fiber.Ctx) error {
 	var events []models.EventItem
 	for rows.Next() {
 		var e models.EventItem
-		err := rows.Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Description)
+		var rundownBytes []byte
+		err := rows.Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description)
 		if err != nil {
 			continue
 		}
+		_ = json.Unmarshal(rundownBytes, &e.Rundown)
 
 		catRows, err := database.DB.Query(`
 			SELECT id, event_id, name, price, quota, remaining_quota, created_at
@@ -68,11 +73,13 @@ func GetEvents(c *fiber.Ctx) error {
 func GetEventByID(c *fiber.Ctx) error {
 	eventID := c.Params("id")
 	var e models.EventItem
+	var rundownBytes []byte
 	err := database.DB.QueryRow(`
-		SELECT id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, description
+		SELECT id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description
 		FROM events
 		WHERE id = $1
-	`, eventID).Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Description)
+	`, eventID).Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description)
+	_ = json.Unmarshal(rundownBytes, &e.Rundown)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -300,14 +307,516 @@ func LookupTicketByCode(c *fiber.Ctx) error {
 	})
 }
 
-// GET /api/v1/admin/dashboard
+// POST /api/v1/admin/login
+func AdminLogin(c *fiber.Ctx) error {
+	var req models.AdminLoginRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request login tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	adminUser := os.Getenv("ADMIN_USERNAME")
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+
+	adminPass := os.Getenv("ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = "123"
+	}
+
+	if req.Username != adminUser || req.Password != adminPass {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+			Success: false,
+			Message: "Username atau Password Admin salah",
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Login Admin berhasil",
+		Data: fiber.Map{
+			"username": adminUser,
+			"token":    "admin-session-token-symphoniatic-2026",
+		},
+	})
+}
+
+// POST /api/v1/admin/events (Create Event + Ticket Categories)
+func CreateEvent(c *fiber.Ctx) error {
+	var req models.CreateEventRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	if req.Title == "" || req.Artist == "" || req.Venue == "" || req.Date == "" || req.Time == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Judul, Artist, Venue, Tanggal, dan Waktu wajib diisi",
+		})
+	}
+
+	if req.Category == "" {
+		req.Category = "SIMFONI UTAMA"
+	}
+	if req.CategoryBadgeColor == "" {
+		req.CategoryBadgeColor = "bg-blue-900/80 text-blue-200 border-blue-500/40"
+	}
+
+	tx, err := database.DB.Begin()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memulai transaksi",
+		})
+	}
+	defer tx.Rollback()
+
+	eventID := fmt.Sprintf("evt-%s", uuid.New().String()[:8])
+	rundownJSON, _ := json.Marshal(req.Rundown)
+	if req.Rundown == nil {
+		rundownJSON = []byte("[]")
+	}
+	_, err = tx.Exec(`
+		INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+	`, eventID, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menyimpan event konser ke database",
+			Error:   err.Error(),
+		})
+	}
+
+	// Insert categories if provided
+	var createdCats []models.TicketCategory
+	for idx, catInput := range req.Categories {
+		catID := fmt.Sprintf("cat-%s-%d", eventID, idx+1)
+		catName := catInput.Name
+		if catName == "" {
+			catName = fmt.Sprintf("Kategori %d", idx+1)
+		}
+		catPrice := catInput.Price
+		catQuota := catInput.Quota
+		if catQuota <= 0 {
+			catQuota = 50
+		}
+
+		_, err = tx.Exec(`
+			INSERT INTO ticket_categories (id, event_id, name, price, quota, remaining_quota)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, catID, eventID, catName, catPrice, catQuota, catQuota)
+
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+				Success: false,
+				Message: "Gagal menyimpan kategori tiket",
+				Error:   err.Error(),
+			})
+		}
+
+		createdCats = append(createdCats, models.TicketCategory{
+			ID:             catID,
+			EventID:        eventID,
+			Name:           catName,
+			Price:          catPrice,
+			Quota:          catQuota,
+			RemainingQuota: catQuota,
+			CreatedAt:      time.Now(),
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal konfirmasi transaksi event",
+		})
+	}
+
+	resEvent := models.EventItem{
+		ID:                 eventID,
+		Title:              req.Title,
+		Artist:             req.Artist,
+		Venue:              req.Venue,
+		Date:               req.Date,
+		Time:               req.Time,
+		Category:           req.Category,
+		CategoryBadgeColor: req.CategoryBadgeColor,
+		Image:              req.Image,
+		AudioURL:           req.AudioURL,
+		Conductor:          req.Conductor,
+		OpenGate:           req.OpenGate,
+		Address:            req.Address,
+		Organizer:          req.Organizer,
+		Subtitle:           req.Subtitle,
+		Description:        req.Description,
+		Rundown:            req.Rundown,
+		Categories:         createdCats,
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(models.APIResponse{
+		Success: true,
+		Message: "Event konser berhasil ditambahkan",
+		Data:    resEvent,
+	})
+}
+
+// PUT /api/v1/admin/events/:id (Update Event)
+func UpdateEvent(c *fiber.Ctx) error {
+	eventID := c.Params("id")
+	var req models.UpdateEventRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	rundownJSON, _ := json.Marshal(req.Rundown)
+	if req.Rundown == nil {
+		rundownJSON = []byte("[]")
+	}
+	res, err := database.DB.Exec(`
+		UPDATE events
+		SET title = $1, artist = $2, venue = $3, date = $4, time = $5, category = $6, category_badge_color = $7, image = $8, audio_url = $9, conductor = $10, open_gate = $11, address = $12, organizer = $13, subtitle = $14, rundown = $15, description = $16
+		WHERE id = $17
+	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, eventID)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui event konser",
+			Error:   err.Error(),
+		})
+	}
+
+	rowsAff, _ := res.RowsAffected()
+	if rowsAff == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+			Success: false,
+			Message: "Event konser tidak ditemukan",
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Event konser berhasil diperbarui",
+	})
+}
+
+// DELETE /api/v1/admin/events/:id (Delete Event)
+func DeleteEvent(c *fiber.Ctx) error {
+	eventID := c.Params("id")
+	res, err := database.DB.Exec("DELETE FROM events WHERE id = $1", eventID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menghapus event konser",
+			Error:   err.Error(),
+		})
+	}
+
+	rowsAff, _ := res.RowsAffected()
+	if rowsAff == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+			Success: false,
+			Message: "Event konser tidak ditemukan",
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Event konser dan kategori tiket terkait berhasil dihapus",
+	})
+}
+
+// POST /api/v1/admin/events/:id/categories (Add Ticket Category)
+func CreateTicketCategory(c *fiber.Ctx) error {
+	eventID := c.Params("id")
+	var req models.CreateCategoryInput
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	if req.Name == "" || req.Price <= 0 || req.Quota <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Nama, Harga, dan Kuota tiket wajib valid",
+		})
+	}
+
+	catID := fmt.Sprintf("cat-%s-%s", eventID, uuid.New().String()[:6])
+	_, err := database.DB.Exec(`
+		INSERT INTO ticket_categories (id, event_id, name, price, quota, remaining_quota)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, catID, eventID, req.Name, req.Price, req.Quota, req.Quota)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menambah kategori tiket",
+			Error:   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(models.APIResponse{
+		Success: true,
+		Message: "Kategori tiket berhasil ditambahkan",
+		Data: models.TicketCategory{
+			ID:             catID,
+			EventID:        eventID,
+			Name:           req.Name,
+			Price:          req.Price,
+			Quota:          req.Quota,
+			RemainingQuota: req.Quota,
+			CreatedAt:      time.Now(),
+		},
+	})
+}
+
+// PUT /api/v1/admin/categories/:id (Update Ticket Category)
+func UpdateTicketCategory(c *fiber.Ctx) error {
+	catID := c.Params("id")
+	var req models.UpdateTicketCategoryRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	res, err := database.DB.Exec(`
+		UPDATE ticket_categories
+		SET name = $1, price = $2, quota = $3, remaining_quota = $3
+		WHERE id = $4
+	`, req.Name, req.Price, req.Quota, catID)
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui kategori tiket",
+			Error:   err.Error(),
+		})
+	}
+
+	rowsAff, _ := res.RowsAffected()
+	if rowsAff == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+			Success: false,
+			Message: "Kategori tiket tidak ditemukan",
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Kategori tiket berhasil diperbarui",
+	})
+}
+
+// DELETE /api/v1/admin/categories/:id (Delete Category)
+func DeleteTicketCategory(c *fiber.Ctx) error {
+	catID := c.Params("id")
+	res, err := database.DB.Exec("DELETE FROM ticket_categories WHERE id = $1", catID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menghapus kategori tiket",
+			Error:   err.Error(),
+		})
+	}
+
+	rowsAff, _ := res.RowsAffected()
+	if rowsAff == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+			Success: false,
+			Message: "Kategori tiket tidak ditemukan",
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Kategori tiket berhasil dihapus",
+	})
+}
+
+// GET /api/v1/admin/orders (List all orders with optional filter & search)
+func GetAllOrders(c *fiber.Ctx) error {
+	search := c.Query("search")
+	status := c.Query("status")
+
+	query := `
+		SELECT id, order_code, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, status, payment_method, created_at
+		FROM orders
+		WHERE 1=1
+	`
+	var args []interface{}
+	argIdx := 1
+
+	if search != "" {
+		query += fmt.Sprintf(" AND (LOWER(order_code) LIKE $%d OR LOWER(user_name) LIKE $%d OR LOWER(user_email) LIKE $%d OR LOWER(event_title) LIKE $%d)", argIdx, argIdx, argIdx, argIdx)
+		args = append(args, "%"+strings.ToLower(search)+"%")
+		argIdx++
+	}
+
+	if status != "" {
+		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		args = append(args, strings.ToUpper(status))
+		argIdx++
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := database.DB.Query(query, args...)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal mengambil daftar pesanan",
+			Error:   err.Error(),
+		})
+	}
+	defer rows.Close()
+
+	var ordersList []models.OrderRecord
+	for rows.Next() {
+		var ord models.OrderRecord
+		err := rows.Scan(&ord.ID, &ord.OrderCode, &ord.EventID, &ord.EventTitle, &ord.Artist, &ord.Venue, &ord.Date, &ord.CategoryName, &ord.Quantity, &ord.TotalPrice, &ord.UserName, &ord.UserEmail, &ord.QRCode, &ord.Status, &ord.PaymentMethod, &ord.CreatedAt)
+		if err == nil {
+			ordersList = append(ordersList, ord)
+		}
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Daftar pesanan berhasil diambil",
+		Data:    ordersList,
+	})
+}
+
+// PATCH /api/v1/admin/orders/:id/status (Update Order Status)
+func UpdateOrderStatus(c *fiber.Ctx) error {
+	orderID := c.Params("id")
+	var req models.UpdateOrderStatusRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	if req.Status == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Status pesanan wajib diisi",
+		})
+	}
+
+	res, err := database.DB.Exec("UPDATE orders SET status = $1 WHERE id = $2", strings.ToUpper(req.Status), orderID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui status pesanan",
+			Error:   err.Error(),
+		})
+	}
+
+	rowsAff, _ := res.RowsAffected()
+	if rowsAff == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+			Success: false,
+			Message: "Pesanan tidak ditemukan",
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: fmt.Sprintf("Status pesanan berhasil diperbarui menjadi %s", req.Status),
+	})
+}
+
+// GET /api/v1/admin/dashboard (Enhanced Admin Dashboard Analytics)
 func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 	var totalRevenue float64
 	var ticketsSold int
 	var remainingQuota int
+	var totalEvents int
+	var totalOrders int
 
-	_ = database.DB.QueryRow("SELECT COALESCE(SUM(total_price), 0), COALESCE(SUM(quantity), 0) FROM orders WHERE status = 'VERIFIED'").Scan(&totalRevenue, &ticketsSold)
+	_ = database.DB.QueryRow("SELECT COALESCE(SUM(total_price), 0), COALESCE(SUM(quantity), 0), COUNT(*) FROM orders WHERE status IN ('VERIFIED', 'CHECKED_IN')").Scan(&totalRevenue, &ticketsSold, &totalOrders)
 	_ = database.DB.QueryRow("SELECT COALESCE(SUM(remaining_quota), 0) FROM ticket_categories").Scan(&remainingQuota)
+	_ = database.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&totalEvents)
+
+	// Revenue by Event breakdown
+	rows, err := database.DB.Query(`
+		SELECT e.id, e.title, COALESCE(SUM(o.total_price), 0) as rev, COALESCE(SUM(o.quantity), 0) as sold
+		FROM events e
+		LEFT JOIN orders o ON e.id = o.event_id AND o.status IN ('VERIFIED', 'CHECKED_IN')
+		GROUP BY e.id, e.title
+		ORDER BY rev DESC
+	`)
+
+	type EventRevenueStat struct {
+		EventID     string  `json:"eventId"`
+		Title       string  `json:"title"`
+		Revenue     float64 `json:"revenue"`
+		TicketsSold int     `json:"ticketsSold"`
+	}
+
+	var eventStats []EventRevenueStat
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var s EventRevenueStat
+			if scanErr := rows.Scan(&s.EventID, &s.Title, &s.Revenue, &s.TicketsSold); scanErr == nil {
+				eventStats = append(eventStats, s)
+			}
+		}
+	}
+
+	// Recent 5 Orders
+	recentRows, err := database.DB.Query(`
+		SELECT id, order_code, event_title, quantity, total_price, user_name, status, created_at
+		FROM orders
+		ORDER BY created_at DESC
+		LIMIT 5
+	`)
+
+	type RecentOrderSummary struct {
+		ID         string    `json:"id"`
+		OrderCode  string    `json:"orderCode"`
+		EventTitle string    `json:"eventTitle"`
+		Quantity   int       `json:"quantity"`
+		TotalPrice float64   `json:"totalPrice"`
+		UserName   string    `json:"userName"`
+		Status     string    `json:"status"`
+		CreatedAt  time.Time `json:"createdAt"`
+	}
+
+	var recentOrders []RecentOrderSummary
+	if err == nil {
+		defer recentRows.Close()
+		for recentRows.Next() {
+			var ro RecentOrderSummary
+			if scanErr := recentRows.Scan(&ro.ID, &ro.OrderCode, &ro.EventTitle, &ro.Quantity, &ro.TotalPrice, &ro.UserName, &ro.Status, &ro.CreatedAt); scanErr == nil {
+				recentOrders = append(recentOrders, ro)
+			}
+		}
+	}
 
 	return c.JSON(models.APIResponse{
 		Success: true,
@@ -316,6 +825,11 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 			"totalRevenue":   totalRevenue,
 			"ticketsSold":    ticketsSold,
 			"remainingQuota": remainingQuota,
+			"totalEvents":    totalEvents,
+			"totalOrders":    totalOrders,
+			"eventStats":     eventStats,
+			"recentOrders":   recentOrders,
 		},
 	})
 }
+
