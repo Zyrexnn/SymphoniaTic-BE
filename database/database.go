@@ -1,0 +1,235 @@
+package database
+
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"os"
+
+	_ "github.com/lib/pq"
+)
+
+var DB *sql.DB
+
+func ConnectDB() {
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	dbname := os.Getenv("DB_NAME")
+	sslmode := os.Getenv("DB_SSLMODE")
+
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "5432"
+	}
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		host, port, user, password, dbname, sslmode)
+
+	var err error
+	DB, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("Gagal membuka koneksi PostgreSQL: %v", err)
+	}
+
+	if err = DB.Ping(); err != nil {
+		log.Fatalf("Gagal ping PostgreSQL: %v", err)
+	}
+
+	log.Println("✅ Berhasil terhubung ke database PostgreSQL!")
+
+	initSchema()
+}
+
+func initSchema() {
+	schemaQuery := `
+	CREATE TABLE IF NOT EXISTS events (
+		id VARCHAR(64) PRIMARY KEY,
+		title VARCHAR(255) NOT NULL,
+		artist VARCHAR(255) NOT NULL,
+		venue VARCHAR(255) NOT NULL,
+		date VARCHAR(100) NOT NULL,
+		time VARCHAR(50) NOT NULL,
+		category VARCHAR(100) NOT NULL,
+		category_badge_color VARCHAR(255) NOT NULL,
+		image TEXT NOT NULL,
+		audio_url TEXT NOT NULL,
+		description TEXT NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS ticket_categories (
+		id VARCHAR(64) PRIMARY KEY,
+		event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+		name VARCHAR(100) NOT NULL,
+		price NUMERIC(12, 2) NOT NULL,
+		quota INT NOT NULL,
+		remaining_quota INT NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS orders (
+		id VARCHAR(64) PRIMARY KEY,
+		order_code VARCHAR(100) UNIQUE NOT NULL,
+		event_id VARCHAR(64) NOT NULL REFERENCES events(id),
+		event_title VARCHAR(255) NOT NULL,
+		artist VARCHAR(255) NOT NULL,
+		venue VARCHAR(255) NOT NULL,
+		date VARCHAR(100) NOT NULL,
+		category_name VARCHAR(100) NOT NULL,
+		quantity INT NOT NULL,
+		total_price NUMERIC(12, 2) NOT NULL,
+		user_name VARCHAR(255) NOT NULL,
+		user_email VARCHAR(255) NOT NULL,
+		qr_code VARCHAR(255) NOT NULL,
+		status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED',
+		payment_method VARCHAR(50) DEFAULT 'SANDBOX_PAYMENT',
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+
+	_, err := DB.Exec(schemaQuery)
+	if err != nil {
+		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
+	}
+
+	log.Println("✅ Skema database PostgreSQL (events, ticket_categories, orders) siap!")
+	seedInitialData()
+}
+
+func seedInitialData() {
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&count)
+	if err != nil || count > 0 {
+		return
+	}
+
+	log.Println("🌱 Melakukan seeding data awal konser & kategori tiket...")
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	events := []struct {
+		ID        string
+		Title     string
+		Artist    string
+		Venue     string
+		Date      string
+		Time      string
+		Category  string
+		BadgeCol  string
+		Image     string
+		AudioURL  string
+		Desc      string
+		Cats      []struct {
+			ID    string
+			Name  string
+			Price float64
+			Quota int
+		}
+	}{
+		{
+			ID:       "evt-1",
+			Title:    "Simfoni Mahakarya Beethoven No. 9",
+			Artist:   "Orkestra Filharmoni Jakarta & Solois Vokal",
+			Venue:    "Aula Simfoni Jakarta, Kemayoran",
+			Date:     "15 Agustus 2026",
+			Time:     "19:30 WIB",
+			Category: "SIMFONI UTAMA",
+			BadgeCol: "bg-blue-900/80 text-blue-200 border-blue-500/40",
+			Image:    "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1000&auto=format&fit=crop",
+			AudioURL: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+			Desc:     "Pertunjukan karya legendaris Ode to Joy Beethoven dipimpin oleh Conductor Utama dengan gabungan 80 musisi paduan suara.",
+			Cats: []struct {
+				ID    string
+				Name  string
+				Price float64
+				Quota int
+			}{
+				{"cat-1-1", "VIP Pit (Depan Panggung)", 1500000, 15},
+				{"cat-1-2", "CAT 1 (Balkon Utama)", 850000, 40},
+				{"cat-1-3", "Festival (Lantai Utama)", 450000, 80},
+			},
+		},
+		{
+			ID:       "evt-2",
+			Title:    "Malam Balet Klasik: Danau Angsa (Swan Lake)",
+			Artist:   "Nusantara Ballet Company & Chamber Orchestra",
+			Venue:    "Teater Jakarta, Taman Ismail Marzuki",
+			Date:     "22 Agustus 2026",
+			Time:     "20:00 WIB",
+			Category: "BALET & OPERA",
+			BadgeCol: "bg-purple-900/80 text-purple-200 border-purple-500/40",
+			Image:    "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1000&auto=format&fit=crop",
+			AudioURL: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+			Desc:     "Pertunjukan balet romantis Tchaikovsky yang memukau dengan alunan musik live dari chamber orchestra bertaraf internasional.",
+			Cats: []struct {
+				ID    string
+				Name  string
+				Price float64
+				Quota int
+			}{
+				{"cat-2-1", "VVIP Box (View Terbaik)", 2000000, 10},
+				{"cat-2-2", "CAT 1 (Tengah)", 1100000, 35},
+				{"cat-2-3", "CAT 2 (Samping)", 600000, 60},
+			},
+		},
+		{
+			ID:       "evt-3",
+			Title:    "Resital Piano Tunggal: Malam Chopin & Liszt",
+			Artist:   "Solois Pianis Muda Internasional",
+			Venue:    "Gedung Kesenian Jakarta, Pasar Baru",
+			Date:     "05 September 2026",
+			Time:     "19:00 WIB",
+			Category: "RESITAL PIANO",
+			BadgeCol: "bg-emerald-900/80 text-emerald-200 border-emerald-500/40",
+			Image:    "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?q=80&w=1000&auto=format&fit=crop",
+			AudioURL: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+			Desc:     "Pengalaman akustik akustik mendalam menampilkan Nocturne Chopin dan Rhapsody Liszt di instrumen Steinway & Sons.",
+			Cats: []struct {
+				ID    string
+				Name  string
+				Price float64
+				Quota int
+			}{
+				{"cat-3-1", "VIP Diamond", 1250000, 8},
+				{"cat-3-2", "CAT 1 Gold", 750000, 25},
+				{"cat-3-3", "Student Pass", 300000, 50},
+			},
+		},
+	}
+
+	for _, e := range events {
+		_, err := tx.Exec(`
+			INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, description)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		`, e.ID, e.Title, e.Artist, e.Venue, e.Date, e.Time, e.Category, e.BadgeCol, e.Image, e.AudioURL, e.Desc)
+		if err != nil {
+			log.Printf("Err insert event: %v", err)
+			return
+		}
+
+		for _, c := range e.Cats {
+			_, err := tx.Exec(`
+				INSERT INTO ticket_categories (id, event_id, name, price, quota, remaining_quota)
+				VALUES ($1, $2, $3, $4, $5, $6)
+			`, c.ID, e.ID, c.Name, c.Price, c.Quota, c.Quota)
+			if err != nil {
+				log.Printf("Err insert category: %v", err)
+				return
+			}
+		}
+	}
+
+	_ = tx.Commit()
+	log.Println("✅ Seeding data awal konser selesai!")
+}
