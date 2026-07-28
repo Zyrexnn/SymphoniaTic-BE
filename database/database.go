@@ -92,6 +92,13 @@ func initSchema() {
 		payment_method VARCHAR(50) DEFAULT 'SANDBOX_PAYMENT',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
+
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS conductor VARCHAR(255) DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS open_gate VARCHAR(100) DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS address TEXT DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS organizer VARCHAR(255) DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS subtitle VARCHAR(255) DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS rundown JSONB DEFAULT '[]';
 	`
 
 	_, err := DB.Exec(schemaQuery)
@@ -129,6 +136,12 @@ func seedInitialData() {
 		BadgeCol  string
 		Image     string
 		AudioURL  string
+		Conductor string
+		OpenGate  string
+		Address   string
+		Organizer string
+		Subtitle  string
+		Rundown   string
 		Desc      string
 		Cats      []struct {
 			ID    string
@@ -138,17 +151,23 @@ func seedInitialData() {
 		}
 	}{
 		{
-			ID:       "evt-1",
-			Title:    "Simfoni Mahakarya Beethoven No. 9",
-			Artist:   "Orkestra Filharmoni Jakarta & Solois Vokal",
-			Venue:    "Aula Simfoni Jakarta, Kemayoran",
-			Date:     "15 Agustus 2026",
-			Time:     "19:30 WIB",
-			Category: "SIMFONI UTAMA",
-			BadgeCol: "bg-blue-900/80 text-blue-200 border-blue-500/40",
-			Image:    "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1000&auto=format&fit=crop",
-			AudioURL: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-			Desc:     "Pertunjukan karya legendaris Ode to Joy Beethoven dipimpin oleh Conductor Utama dengan gabungan 80 musisi paduan suara.",
+			ID:        "evt-1",
+			Title:     "Simfoni Mahakarya Beethoven No. 9",
+			Artist:    "Orkestra Filharmoni Jakarta & Solois Vokal",
+			Venue:     "Aula Simfoni Jakarta, Kemayoran",
+			Date:      "15 Agustus 2026",
+			Time:      "19:30 WIB",
+			Category:  "SIMFONI UTAMA",
+			BadgeCol:  "bg-blue-900/80 text-blue-200 border-blue-500/40",
+			Image:     "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1000&auto=format&fit=crop",
+			AudioURL:  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+			Conductor: "Maestro Addie MS",
+			OpenGate:  "18:00 WIB",
+			Address:   "Jl. Benyamin Suaeb, Kemayoran, Jakarta Pusat",
+			Organizer: "SymphoniaTic Production",
+			Subtitle:  "Pertunjukan Mahakarya Simfoni",
+			Rundown:   `[{"time":"18:00 WIB","activity":"Open Gate & Registrasi Tiket"},{"time":"19:30 WIB","activity":"Pertunjukan Utama Orkes Simfoni"},{"time":"21:30 WIB","activity":"Selesai & Curtain Call"}]`,
+			Desc:      "Pertunjukan karya legendaris Ode to Joy Beethoven dipimpin oleh Conductor Utama dengan gabungan 80 musisi paduan suara.",
 			Cats: []struct {
 				ID    string
 				Name  string
@@ -161,17 +180,23 @@ func seedInitialData() {
 			},
 		},
 		{
-			ID:       "evt-2",
-			Title:    "Malam Balet Klasik: Danau Angsa (Swan Lake)",
-			Artist:   "Nusantara Ballet Company & Chamber Orchestra",
-			Venue:    "Teater Jakarta, Taman Ismail Marzuki",
-			Date:     "22 Agustus 2026",
-			Time:     "20:00 WIB",
-			Category: "BALET & OPERA",
-			BadgeCol: "bg-purple-900/80 text-purple-200 border-purple-500/40",
-			Image:    "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1000&auto=format&fit=crop",
-			AudioURL: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-			Desc:     "Pertunjukan balet romantis Tchaikovsky yang memukau dengan alunan musik live dari chamber orchestra bertaraf internasional.",
+			ID:        "evt-2",
+			Title:     "Malam Balet Klasik: Danau Angsa (Swan Lake)",
+			Artist:    "Nusantara Ballet Company & Chamber Orchestra",
+			Venue:     "Teater Jakarta, Taman Ismail Marzuki",
+			Date:      "22 Agustus 2026",
+			Time:      "20:00 WIB",
+			Category:  "BALET & OPERA",
+			BadgeCol:  "bg-purple-900/80 text-purple-200 border-purple-500/40",
+			Image:     "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1000&auto=format&fit=crop",
+			AudioURL:  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+			Conductor: "Maestro Hikotaro Yazaki",
+			OpenGate:  "18:30 WIB",
+			Address:   "Jl. Cikini Raya No.73, Menteng, Jakarta Pusat",
+			Organizer: "SymphoniaTic Production",
+			Subtitle:  "Pertunjukan Balet & Opera Romantis",
+			Rundown:   `[{"time":"18:30 WIB","activity":"Open Gate & Registrasi Tiket"},{"time":"20:00 WIB","activity":"Pertunjukan Utama Balet & Opera"},{"time":"22:00 WIB","activity":"Selesai & Curtain Call"}]`,
+			Desc:      "Pertunjukan balet romantis Tchaikovsky yang memukau dengan alunan musik live dari chamber orchestra bertaraf internasional.",
 			Cats: []struct {
 				ID    string
 				Name  string
@@ -184,17 +209,23 @@ func seedInitialData() {
 			},
 		},
 		{
-			ID:       "evt-3",
-			Title:    "Resital Piano Tunggal: Malam Chopin & Liszt",
-			Artist:   "Solois Pianis Muda Internasional",
-			Venue:    "Gedung Kesenian Jakarta, Pasar Baru",
-			Date:     "05 September 2026",
-			Time:     "19:00 WIB",
-			Category: "RESITAL PIANO",
-			BadgeCol: "bg-emerald-900/80 text-emerald-200 border-emerald-500/40",
-			Image:    "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?q=80&w=1000&auto=format&fit=crop",
-			AudioURL: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-			Desc:     "Pengalaman akustik akustik mendalam menampilkan Nocturne Chopin dan Rhapsody Liszt di instrumen Steinway & Sons.",
+			ID:        "evt-3",
+			Title:     "Resital Piano Tunggal: Malam Chopin & Liszt",
+			Artist:    "Solois Pianis Muda Internasional",
+			Venue:     "Gedung Kesenian Jakarta, Pasar Baru",
+			Date:      "05 September 2026",
+			Time:      "19:00 WIB",
+			Category:  "RESITAL PIANO",
+			BadgeCol:  "bg-emerald-900/80 text-emerald-200 border-emerald-500/40",
+			Image:     "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?q=80&w=1000&auto=format&fit=crop",
+			AudioURL:  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+			Conductor: "-",
+			OpenGate:  "17:30 WIB",
+			Address:   "Jl. Gedung Kesenian No.1, Pasar Baru, Jakarta Pusat",
+			Organizer: "SymphoniaTic Production",
+			Subtitle:  "Pertunjukan Piano Solo Virtuoso",
+			Rundown:   `[{"time":"17:30 WIB","activity":"Open Gate & Registrasi Tiket"},{"time":"19:00 WIB","activity":"Pertunjukan Utama Piano Solo"},{"time":"21:00 WIB","activity":"Selesai & Curtain Call"}]`,
+			Desc:      "Pengalaman akustik akustik mendalam menampilkan Nocturne Chopin dan Rhapsody Liszt di instrumen Steinway & Sons.",
 			Cats: []struct {
 				ID    string
 				Name  string
@@ -210,9 +241,9 @@ func seedInitialData() {
 
 	for _, e := range events {
 		_, err := tx.Exec(`
-			INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, description)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		`, e.ID, e.Title, e.Artist, e.Venue, e.Date, e.Time, e.Category, e.BadgeCol, e.Image, e.AudioURL, e.Desc)
+			INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		`, e.ID, e.Title, e.Artist, e.Venue, e.Date, e.Time, e.Category, e.BadgeCol, e.Image, e.AudioURL, e.Conductor, e.OpenGate, e.Address, e.Organizer, e.Subtitle, e.Rundown, e.Desc)
 		if err != nil {
 			log.Printf("Err insert event: %v", err)
 			return
