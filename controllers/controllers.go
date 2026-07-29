@@ -747,6 +747,14 @@ func UpdateOrderStatus(c *fiber.Ctx) error {
 		})
 	}
 
+	if strings.ToUpper(req.Status) == "REMINDED" || strings.ToUpper(req.Status) == "REMINDER" {
+		var userEmail, userName, eventTitle, venue, date, orderCode string
+		err := database.DB.QueryRow("SELECT user_email, user_name, event_title, venue, date, order_code FROM orders WHERE id = $1", orderID).Scan(&userEmail, &userName, &eventTitle, &venue, &date, &orderCode)
+		if err == nil {
+			services.SendEventReminderEmail(userEmail, userName, eventTitle, venue, "", date, orderCode)
+		}
+	}
+
 	return c.JSON(models.APIResponse{
 		Success: true,
 		Message: fmt.Sprintf("Status pesanan berhasil diperbarui menjadi %s", req.Status),
