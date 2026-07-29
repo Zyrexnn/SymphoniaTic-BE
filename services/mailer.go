@@ -1,0 +1,156 @@
+package services
+
+import (
+	"fmt"
+	"log"
+	"net/smtp"
+	"os"
+
+	"github.com/Zyrexnn/SymphoniaTic-be/models"
+)
+
+// SendETicketEmail sends an HTML formatted E-Ticket email via SMTP (Mailpit compatible) asynchronously.
+func SendETicketEmail(order models.OrderRecord) {
+	go func() {
+		smtpHost := os.Getenv("SMTP_HOST")
+		if smtpHost == "" {
+			smtpHost = "localhost"
+		}
+		smtpPort := os.Getenv("SMTP_PORT")
+		if smtpPort == "" {
+			smtpPort = "1025"
+		}
+		senderEmail := os.Getenv("SMTP_SENDER_EMAIL")
+		if senderEmail == "" {
+			senderEmail = "noreply@symphoniatic.com"
+		}
+		senderName := os.Getenv("SMTP_SENDER_NAME")
+		if senderName == "" {
+			senderName = "SymphoniaTic E-Ticket System"
+		}
+
+		addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+
+		subject := fmt.Sprintf("E-TICKET RESMI [%s] - %s", order.OrderCode, order.EventTitle)
+
+		htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>E-Ticket SymphoniaTic</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .header { background: linear-gradient(135deg, #1e1b4b 0%%, #312e81 100%%); padding: 30px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
+        .header h1 { margin: 0; color: #fbbf24; font-size: 24px; letter-spacing: 2px; }
+        .header p { margin: 5px 0 0 0; color: #94a3b8; font-size: 14px; }
+        .content { padding: 30px 25px; }
+        .ticket-box { background: #0f172a; border: 1px dashed #6366f1; border-radius: 12px; padding: 20px; margin-bottom: 25px; }
+        .ticket-code { font-size: 22px; font-weight: bold; color: #38bdf8; text-align: center; letter-spacing: 3px; margin-bottom: 15px; }
+        .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }
+        .label { color: #94a3b8; }
+        .value { color: #f8fafc; font-weight: 600; text-align: right; }
+        .qr-section { text-align: center; margin: 25px 0; background: #ffffff; padding: 15px; border-radius: 12px; display: inline-block; }
+        .qr-section img { max-width: 160px; height: auto; }
+        .footer { background: #090d16; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+        .badge { background: #059669; color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SYMPHONIATIC</h1>
+            <p>E-Ticket Resmi Konser & Pertunjukan</p>
+        </div>
+        <div class="content">
+            <p>Halo <strong>%s</strong>,</p>
+            <p>Pembayaran transaksi Anda telah terverifikasi. Berikut adalah e-ticket resmi Anda untuk menyaksikan pertunjukan <strong>%s</strong>.</p>
+            
+            <div class="ticket-box">
+                <div class="ticket-code">%s</div>
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <span class="badge">STATUS: VERIFIED</span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="label">Konser / Event:</span>
+                    <span class="value">%s</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Artis / Performa:</span>
+                    <span class="value">%s</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Lokasi (Venue):</span>
+                    <span class="value">%s</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Waktu:</span>
+                    <span class="value">%s</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Kategori Tiket:</span>
+                    <span class="value">%s</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Jumlah Tiket:</span>
+                    <span class="value">%d Tiket</span>
+                </div>
+                <div class="detail-row" style="border-bottom: none;">
+                    <span class="label">Total Bayar:</span>
+                    <span class="value" style="color: #fbbf24;">Rp %.0f</span>
+                </div>
+            </div>
+
+            <div style="text-align: center;">
+                <div class="qr-section">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=%s" alt="QR Code E-Ticket" />
+                    <div style="color: #000; font-size: 11px; margin-top: 5px; font-weight: bold;">Tunjukkan QR ini saat masuk venue</div>
+                </div>
+            </div>
+
+            <p style="font-size: 13px; color: #94a3b8; text-align: center;">
+                Harap simpan email ini atau unduh kode QR di atas untuk verifikasi di lokasi konser.
+            </p>
+        </div>
+        <div class="footer">
+            &copy; 2026 SymphoniaTic. Seluruh Hak Cipta Dilindungi.<br/>
+            Email dikirim otomatis oleh Sistem SymphoniaTic.
+        </div>
+    </div>
+</body>
+</html>`,
+			order.UserName,
+			order.EventTitle,
+			order.OrderCode,
+			order.EventTitle,
+			order.Artist,
+			order.Venue,
+			order.Date,
+			order.CategoryName,
+			order.Quantity,
+			order.TotalPrice,
+			order.QRCode,
+		)
+
+		headers := make(map[string]string)
+		headers["From"] = fmt.Sprintf("%s <%s>", senderName, senderEmail)
+		headers["To"] = order.UserEmail
+		headers["Subject"] = subject
+		headers["MIME-Version"] = "1.0"
+		headers["Content-Type"] = "text/html; charset=UTF-8"
+
+		message := ""
+		for k, v := range headers {
+			message += fmt.Sprintf("%s: %s\r\n", k, v)
+		}
+		message += "\r\n" + htmlBody
+
+		err := smtp.SendMail(addr, nil, senderEmail, []string{order.UserEmail}, []byte(message))
+		if err != nil {
+			log.Printf("[MAILPIT-ERROR] Gagal mengirim e-ticket ke %s: %v\n", order.UserEmail, err)
+		} else {
+			log.Printf("[MAILPIT-SUCCESS] E-Ticket email [%s] berhasil dikirim ke Mailpit (%s) untuk %s!\n", order.OrderCode, addr, order.UserEmail)
+		}
+	}()
+}

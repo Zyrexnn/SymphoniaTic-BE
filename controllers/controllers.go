@@ -11,6 +11,7 @@ import (
 
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
+	"github.com/Zyrexnn/SymphoniaTic-be/services"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
@@ -261,6 +262,9 @@ func CreateOrder(c *fiber.Ctx) error {
 		PaymentMethod: "SANDBOX_PAYMENT",
 		CreatedAt:     time.Now(),
 	}
+
+	// Kirim E-Ticket secara asinkron ke Mailpit SMTP
+	services.SendETicketEmail(resOrder)
 
 	return c.Status(fiber.StatusCreated).JSON(models.APIResponse{
 		Success: true,
