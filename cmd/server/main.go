@@ -14,7 +14,14 @@ import (
 )
 
 func main() {
-	_ = godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Warning: .env gagal ke-load:", err)
+	}
+
+	log.Println("DEBUG DB_PASSWORD:", os.Getenv("DB_PASSWORD"))
+	log.Println("DEBUG DB_USER:", os.Getenv("DB_USER"))
+	log.Println("DEBUG DB_HOST:", os.Getenv("DB_HOST"))
 
 	database.ConnectDB()
 
