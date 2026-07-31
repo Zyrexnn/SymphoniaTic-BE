@@ -61,6 +61,27 @@ CREATE INDEX IF NOT EXISTS idx_ticket_categories_event_id ON ticket_categories(e
 CREATE INDEX IF NOT EXISTS idx_orders_order_code ON orders(order_code);
 CREATE INDEX IF NOT EXISTS idx_orders_user_email ON orders(user_email);
 
+CREATE TABLE IF NOT EXISTS refund_requests (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    order_code VARCHAR(100) NOT NULL,
+    user_email VARCHAR(255) NOT NULL,
+    bank_name VARCHAR(100) NOT NULL,
+    account_number VARCHAR(100) NOT NULL,
+    account_holder VARCHAR(255) NOT NULL,
+    reason TEXT DEFAULT '',
+    refund_amount NUMERIC(12, 2) NOT NULL,
+    status VARCHAR(50) DEFAULT 'PENDING',
+    admin_note TEXT DEFAULT '',
+    otp_code VARCHAR(10) DEFAULT NULL,
+    otp_expires_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_refund_requests_order_code ON refund_requests(order_code);
+CREATE INDEX IF NOT EXISTS idx_refund_requests_status ON refund_requests(status);
+
 -- 3. RESET & DATA SEEDING
 TRUNCATE TABLE orders, ticket_categories, events CASCADE;
 

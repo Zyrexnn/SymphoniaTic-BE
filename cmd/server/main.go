@@ -51,6 +51,11 @@ func main() {
 	api.Post("/orders", controllers.CreateOrder)
 	api.Get("/tickets/lookup", controllers.LookupTicketByCode)
 
+	// Refund Routes
+	api.Post("/refunds/request-otp", controllers.RequestRefundOTP)
+	api.Post("/refunds/submit", controllers.SubmitRefund)
+	api.Post("/refunds/status", controllers.GetRefundStatus)
+
 	// ─── Admin Endpoints ───
 	admin := api.Group("/admin")
 	admin.Post("/login", controllers.AdminLogin)
@@ -69,6 +74,11 @@ func main() {
 	// Admin Orders Management Routes
 	admin.Get("/orders", controllers.GetAllOrders)
 	admin.Patch("/orders/:id/status", controllers.UpdateOrderStatus)
+
+	// Admin Refund Management Routes
+	admin.Get("/refunds", controllers.AdminGetAllRefunds)
+	admin.Patch("/refunds/:id/status", controllers.AdminUpdateRefundStatus)
+
 
 	port := os.Getenv("PORT")
 	if port == "" {

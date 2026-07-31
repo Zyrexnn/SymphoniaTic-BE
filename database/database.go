@@ -99,6 +99,27 @@ func initSchema() {
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS organizer VARCHAR(255) DEFAULT '';
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS subtitle VARCHAR(255) DEFAULT '';
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS rundown JSONB DEFAULT '[]';
+
+	CREATE TABLE IF NOT EXISTS refund_requests (
+		id VARCHAR(64) PRIMARY KEY,
+		order_id VARCHAR(64) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+		order_code VARCHAR(100) NOT NULL,
+		user_email VARCHAR(255) NOT NULL,
+		bank_name VARCHAR(100) NOT NULL,
+		account_number VARCHAR(100) NOT NULL,
+		account_holder VARCHAR(255) NOT NULL,
+		reason TEXT DEFAULT '',
+		refund_amount NUMERIC(12, 2) NOT NULL,
+		status VARCHAR(50) DEFAULT 'PENDING',
+		admin_note TEXT DEFAULT '',
+		otp_code VARCHAR(10) DEFAULT NULL,
+		otp_expires_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_refund_requests_order_code ON refund_requests(order_code);
+	CREATE INDEX IF NOT EXISTS idx_refund_requests_status ON refund_requests(status);
 	`
 
 	_, err := DB.Exec(schemaQuery)

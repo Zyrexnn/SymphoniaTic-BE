@@ -236,3 +236,172 @@ func SendEventReminderEmail(userEmail, userName, eventTitle, venue, address, dat
 		log.Printf("[MAILPIT-REMINDER] Email Pengingat H-1 [%s] berhasil dikirim ke %s\n", orderCode, userEmail)
 	}()
 }
+
+// SendRefundOTPEmail sends a 6-digit OTP code for refund request verification.
+func SendRefundOTPEmail(userEmail, orderCode, otpCode string) {
+	go func() {
+		smtpHost := os.Getenv("SMTP_HOST")
+		if smtpHost == "" {
+			smtpHost = "localhost"
+		}
+		smtpPort := os.Getenv("SMTP_PORT")
+		if smtpPort == "" {
+			smtpPort = "1025"
+		}
+		senderEmail := os.Getenv("SMTP_SENDER_EMAIL")
+		if senderEmail == "" {
+			senderEmail = "noreply@symphoniatic.com"
+		}
+		senderName := os.Getenv("SMTP_SENDER_NAME")
+		if senderName == "" {
+			senderName = "SymphoniaTic Refund Security"
+		}
+
+		addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+		subject := fmt.Sprintf("🔐 KODE OTP REFUND TIKET [%s] - %s", orderCode, otpCode)
+
+		htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Kode OTP Refund SymphoniaTic</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 550px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e1b4b 0%%, #312e81 100%%); padding: 25px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
+        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; }
+        .content { padding: 25px; text-align: center; }
+        .otp-box { background: #0f172a; border: 2px dashed #6366f1; border-radius: 12px; padding: 20px; margin: 20px 0; display: inline-block; }
+        .otp-code { font-size: 32px; font-weight: bold; color: #38bdf8; letter-spacing: 8px; }
+        .warning { font-size: 13px; color: #f59e0b; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SYMPHONIATIC REFUND</h1>
+            <p style="margin:5px 0 0 0; color:#94a3b8; font-size:14px;">Kode Verifikasi Keamanan Pengajuan Refund Tiket</p>
+        </div>
+        <div class="content">
+            <p style="color:#cbd5e1; text-align:left;">Anda (atau seseorang) baru saja mengajukan permintaan refund untuk Kode Pesanan: <strong>%s</strong>.</p>
+            <p style="color:#cbd5e1; text-align:left;">Gunakan kode OTP di bawah ini untuk melanjutkan formulir pengajuan refund:</p>
+            
+            <div class="otp-box">
+                <div class="otp-code">%s</div>
+            </div>
+
+            <p style="font-size:13px; color:#94a3b8;">Kode OTP ini berlaku selama <strong>10 menit</strong>. Jangan bagikan kode ini kepada siapapun demi keamanan transaksi Anda.</p>
+            <p class="warning">⚠️ Jika Anda tidak pernah merasa mengajukan refund, abaikan email ini.</p>
+        </div>
+    </div>
+</body>
+</html>`, orderCode, otpCode)
+
+		headers := make(map[string]string)
+		headers["From"] = fmt.Sprintf("%s <%s>", senderName, senderEmail)
+		headers["To"] = userEmail
+		headers["Subject"] = subject
+		headers["MIME-Version"] = "1.0"
+		headers["Content-Type"] = "text/html; charset=UTF-8"
+
+		message := ""
+		for k, v := range headers {
+			message += fmt.Sprintf("%s: %s\r\n", k, v)
+		}
+		message += "\r\n" + htmlBody
+
+		_ = smtp.SendMail(addr, nil, senderEmail, []string{userEmail}, []byte(message))
+		log.Printf("[MAILPIT-REFUND-OTP] Email OTP Refund [%s] berhasil dikirim ke %s\n", orderCode, userEmail)
+	}()
+}
+
+// SendRefundStatusNotificationEmail notifies user about their refund status (APPROVED/REJECTED).
+func SendRefundStatusNotificationEmail(userEmail, orderCode, status, adminNote string, amount float64) {
+	go func() {
+		smtpHost := os.Getenv("SMTP_HOST")
+		if smtpHost == "" {
+			smtpHost = "localhost"
+		}
+		smtpPort := os.Getenv("SMTP_PORT")
+		if smtpPort == "" {
+			smtpPort = "1025"
+		}
+		senderEmail := os.Getenv("SMTP_SENDER_EMAIL")
+		if senderEmail == "" {
+			senderEmail = "noreply@symphoniatic.com"
+		}
+		senderName := os.Getenv("SMTP_SENDER_NAME")
+		if senderName == "" {
+			senderName = "SymphoniaTic Finance"
+		}
+
+		addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+		statusTitle := "DISETUJUI"
+		badgeColor := "#10b981"
+		if status == "REJECTED" {
+			statusTitle = "DITOLAK"
+			badgeColor = "#ef4444"
+		}
+
+		subject := fmt.Sprintf("📢 UPDATE STATUS REFUND TIKET [%s] - %s", orderCode, statusTitle)
+
+		htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Update Status Refund SymphoniaTic</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 550px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e1b4b 0%%, #312e81 100%%); padding: 25px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
+        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; }
+        .content { padding: 25px; }
+        .status-badge { display: inline-block; background-color: %s; color: #ffffff; padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin: 15px 0; }
+        .box { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 15px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SYMPHONIATIC REFUND UPDATE</h1>
+            <p style="margin:5px 0 0 0; color:#94a3b8; font-size:14px;">Kode Pesanan: %s</p>
+        </div>
+        <div class="content">
+            <p>Halo,</p>
+            <p>Pengajuan refund tiket Anda untuk pesanan <strong>%s</strong> telah diproses oleh tim finance kami.</p>
+            
+            <div style="text-align:center;">
+                <span class="status-badge">STATUS: %s</span>
+            </div>
+
+            <div class="box">
+                <p style="margin:0; font-size:13px; color:#94a3b8;">Nominal Refund:</p>
+                <p style="margin:4px 0 10px 0; font-size:18px; font-weight:bold; color:#38bdf8;">Rp %.2f</p>
+                <p style="margin:0; font-size:13px; color:#94a3b8;">Catatan Admin:</p>
+                <p style="margin:4px 0 0 0; font-size:14px; color:#f8fafc;">%s</p>
+            </div>
+
+            <p style="font-size:13px; color:#94a3b8; text-align:center;">Jika Anda memiliki pertanyaan lebih lanjut, silakan hubungi tim bantuan kami di support@symphoniatic.id.</p>
+        </div>
+    </div>
+</body>
+</html>`, badgeColor, orderCode, orderCode, statusTitle, amount, adminNote)
+
+		headers := make(map[string]string)
+		headers["From"] = fmt.Sprintf("%s <%s>", senderName, senderEmail)
+		headers["To"] = userEmail
+		headers["Subject"] = subject
+		headers["MIME-Version"] = "1.0"
+		headers["Content-Type"] = "text/html; charset=UTF-8"
+
+		message := ""
+		for k, v := range headers {
+			message += fmt.Sprintf("%s: %s\r\n", k, v)
+		}
+		message += "\r\n" + htmlBody
+
+		_ = smtp.SendMail(addr, nil, senderEmail, []string{userEmail}, []byte(message))
+		log.Printf("[MAILPIT-REFUND-STATUS] Email Status Refund [%s] berhasil dikirim ke %s\n", orderCode, userEmail)
+	}()
+}
+

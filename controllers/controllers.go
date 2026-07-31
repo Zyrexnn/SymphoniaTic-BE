@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"strings"
@@ -844,4 +845,473 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 		},
 	})
 }
+
+// ─── REFUND CONTROLLERS ───
+
+// POST /api/v1/refunds/request-otp
+func RequestRefundOTP(c *fiber.Ctx) error {
+	var input models.RequestRefundOTPInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format data request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	orderCode := strings.TrimSpace(input.OrderCode)
+	userEmail := strings.ToLower(strings.TrimSpace(input.UserEmail))
+
+	if orderCode == "" || userEmail == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Kode pesanan dan email wajib diisi",
+		})
+	}
+
+	// 1. Check order existence and ownership
+	var order models.OrderRecord
+	err := database.DB.QueryRow(`
+		SELECT id, order_code, event_title, user_email, status, total_price, quantity
+		FROM orders
+		WHERE UPPER(order_code) = UPPER($1)
+	`, orderCode).Scan(&order.ID, &order.OrderCode, &order.EventTitle, &order.UserEmail, &order.Status, &order.TotalPrice, &order.Quantity)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Kode pesanan tidak ditemukan",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memverifikasi pesanan",
+			Error:   err.Error(),
+		})
+	}
+
+	// Email check
+	if !strings.EqualFold(order.UserEmail, userEmail) {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+			Success: false,
+			Message: "Email tidak cocok dengan pemegang tiket ini",
+		})
+	}
+
+	// Check order status
+	if order.Status == "CHECKED_IN" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Tiket sudah di-scan (Check In) pada venue dan tidak dapat dikembalikan / refund",
+		})
+	}
+	if order.Status == "REFUND_REQUESTED" || order.Status == "REFUNDED" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Pengajuan refund untuk tiket ini sedang diproses atau sudah selesai",
+		})
+	}
+	if order.Status == "CANCELLED" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Pesanan ini sudah dibatalkan sebelumnya",
+		})
+	}
+
+	// Generate 6-digit OTP
+	otpCode := fmt.Sprintf("%06d", rand.Intn(1000000))
+	expiresAt := time.Now().Add(10 * time.Minute)
+
+	// Check if existing refund_request record exists
+	var existingID string
+	err = database.DB.QueryRow(`
+		SELECT id FROM refund_requests WHERE order_id = $1
+	`, order.ID).Scan(&existingID)
+
+	if err == sql.ErrNoRows {
+		refundID := "rf-" + uuid.New().String()
+		_, err = database.DB.Exec(`
+			INSERT INTO refund_requests (id, order_id, order_code, user_email, bank_name, account_number, account_holder, reason, refund_amount, status, otp_code, otp_expires_at)
+			VALUES ($1, $2, $3, $4, '', '', '', '', $5, 'OTP_SENT', $6, $7)
+		`, refundID, order.ID, order.OrderCode, order.UserEmail, order.TotalPrice, otpCode, expiresAt)
+	} else if err == nil {
+		_, err = database.DB.Exec(`
+			UPDATE refund_requests
+			SET otp_code = $1, otp_expires_at = $2, updated_at = CURRENT_TIMESTAMP
+			WHERE id = $3
+		`, otpCode, expiresAt, existingID)
+	}
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal membuat kode verifikasi OTP",
+			Error:   err.Error(),
+		})
+	}
+
+	// Send OTP email
+	services.SendRefundOTPEmail(order.UserEmail, order.OrderCode, otpCode)
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Kode OTP verifikasi refund telah dikirim ke email " + order.UserEmail,
+		Data: fiber.Map{
+			"orderCode": order.OrderCode,
+			"userEmail": order.UserEmail,
+			"expiresIn": "10 Menit",
+		},
+	})
+}
+
+// POST /api/v1/refunds/submit
+func SubmitRefund(c *fiber.Ctx) error {
+	var input models.SubmitRefundInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format data request tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	orderCode := strings.TrimSpace(input.OrderCode)
+	userEmail := strings.ToLower(strings.TrimSpace(input.UserEmail))
+	otpCode := strings.TrimSpace(input.OTPCode)
+	bankName := strings.TrimSpace(input.BankName)
+	accountNumber := strings.TrimSpace(input.AccountNumber)
+	accountHolder := strings.TrimSpace(input.AccountHolder)
+	reason := strings.TrimSpace(input.Reason)
+
+	if orderCode == "" || userEmail == "" || otpCode == "" || bankName == "" || accountNumber == "" || accountHolder == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Seluruh kolom formulir dan OTP wajib diisi",
+		})
+	}
+
+	// Query refund_request record
+	var rr models.RefundRequestRecord
+	var dbOTP string
+	var expiresAt time.Time
+	var currentStatus string
+
+	err := database.DB.QueryRow(`
+		SELECT id, order_id, order_code, user_email, status, otp_code, otp_expires_at
+		FROM refund_requests
+		WHERE UPPER(order_code) = UPPER($1)
+	`, orderCode).Scan(&rr.ID, &rr.OrderID, &rr.OrderCode, &rr.UserEmail, &currentStatus, &dbOTP, &expiresAt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Pengajuan refund tidak ditemukan. Silakan minta kode OTP terlebih dahulu.",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memproses data refund",
+			Error:   err.Error(),
+		})
+	}
+
+	if !strings.EqualFold(rr.UserEmail, userEmail) {
+		return c.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+			Success: false,
+			Message: "Email tidak sesuai dengan pemegang tiket ini",
+		})
+	}
+
+	if dbOTP != otpCode {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Kode OTP yang Anda masukkan salah",
+		})
+	}
+
+	if time.Now().After(expiresAt) {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Kode OTP telah kadaluarsa. Silakan minta kode OTP baru.",
+		})
+	}
+
+	// Start SQL Transaction
+	tx, err := database.DB.Begin()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memulai transaksi database",
+			Error:   err.Error(),
+		})
+	}
+	defer tx.Rollback()
+
+	// Update refund_requests to PENDING
+	_, err = tx.Exec(`
+		UPDATE refund_requests
+		SET bank_name = $1, account_number = $2, account_holder = $3, reason = $4, status = 'PENDING', otp_code = NULL, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $5
+	`, bankName, accountNumber, accountHolder, reason, rr.ID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal mengupdate permohonan refund",
+			Error:   err.Error(),
+		})
+	}
+
+	// Update orders status to REFUND_REQUESTED
+	_, err = tx.Exec(`
+		UPDATE orders
+		SET status = 'REFUND_REQUESTED'
+		WHERE id = $1
+	`, rr.OrderID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui status pesanan",
+			Error:   err.Error(),
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menyimpan pengajuan refund",
+			Error:   err.Error(),
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Pengajuan refund berhasil dikirim. Tim Finance akan meninjau dan memproses pengembalian dana Anda.",
+		Data: fiber.Map{
+			"orderCode":     rr.OrderCode,
+			"status":        "PENDING",
+			"bankName":      bankName,
+			"accountHolder": accountHolder,
+		},
+	})
+}
+
+// POST /api/v1/refunds/status
+func GetRefundStatus(c *fiber.Ctx) error {
+	var input models.CheckRefundStatusRequest
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format request tidak valid",
+		})
+	}
+
+	orderCode := strings.TrimSpace(input.OrderCode)
+	userEmail := strings.ToLower(strings.TrimSpace(input.UserEmail))
+
+	if orderCode == "" || userEmail == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Kode pesanan dan email wajib diisi",
+		})
+	}
+
+	var rr models.RefundRequestRecord
+	var orderStatus string
+
+	err := database.DB.QueryRow(`
+		SELECT r.id, r.order_id, r.order_code, r.user_email, r.bank_name, r.account_number, r.account_holder, r.reason, r.refund_amount, r.status, COALESCE(r.admin_note, ''), r.created_at, r.updated_at, o.status, o.event_title, o.category_name, o.quantity, o.user_name
+		FROM refund_requests r
+		JOIN orders o ON o.id = r.order_id
+		WHERE UPPER(r.order_code) = UPPER($1) AND LOWER(r.user_email) = LOWER($2)
+	`, orderCode, userEmail).Scan(
+		&rr.ID, &rr.OrderID, &rr.OrderCode, &rr.UserEmail, &rr.BankName, &rr.AccountNumber, &rr.AccountHolder,
+		&rr.Reason, &rr.RefundAmount, &rr.Status, &rr.AdminNote, &rr.CreatedAt, &rr.UpdatedAt,
+		&orderStatus, &rr.EventTitle, &rr.CategoryName, &rr.Quantity, &rr.UserName,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Data pengajuan refund tidak ditemukan untuk kode dan email ini",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal mengambil status refund",
+			Error:   err.Error(),
+		})
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Berhasil mengambil status refund",
+		Data: fiber.Map{
+			"orderStatus":  orderStatus,
+			"refundDetail": rr,
+		},
+	})
+}
+
+// GET /api/v1/admin/refunds
+func AdminGetAllRefunds(c *fiber.Ctx) error {
+	rows, err := database.DB.Query(`
+		SELECT r.id, r.order_id, r.order_code, r.user_email, r.bank_name, r.account_number, r.account_holder, r.reason, r.refund_amount, r.status, COALESCE(r.admin_note, ''), r.created_at, r.updated_at, o.event_title, o.category_name, o.quantity, o.user_name
+		FROM refund_requests r
+		JOIN orders o ON o.id = r.order_id
+		WHERE r.status != 'OTP_SENT'
+		ORDER BY r.created_at DESC
+	`)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal mengambil daftar permohonan refund",
+			Error:   err.Error(),
+		})
+	}
+	defer rows.Close()
+
+	var refunds []models.RefundRequestRecord
+	for rows.Next() {
+		var rr models.RefundRequestRecord
+		err := rows.Scan(
+			&rr.ID, &rr.OrderID, &rr.OrderCode, &rr.UserEmail, &rr.BankName, &rr.AccountNumber, &rr.AccountHolder,
+			&rr.Reason, &rr.RefundAmount, &rr.Status, &rr.AdminNote, &rr.CreatedAt, &rr.UpdatedAt,
+			&rr.EventTitle, &rr.CategoryName, &rr.Quantity, &rr.UserName,
+		)
+		if err == nil {
+			refunds = append(refunds, rr)
+		}
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "Berhasil mengambil daftar permohonan refund",
+		Data:    refunds,
+	})
+}
+
+// PATCH /api/v1/admin/refunds/:id/status
+func AdminUpdateRefundStatus(c *fiber.Ctx) error {
+	refundID := c.Params("id")
+	var input models.UpdateRefundStatusRequest
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format data request tidak valid",
+		})
+	}
+
+	newStatus := strings.ToUpper(strings.TrimSpace(input.Status))
+	if newStatus != "APPROVED" && newStatus != "REJECTED" && newStatus != "COMPLETED" {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Status harus APPROVED, REJECTED, atau COMPLETED",
+		})
+	}
+
+	// 1. Fetch existing refund details
+	var orderID, orderCode, userEmail, categoryName, eventID string
+	var quantity int
+	var amount float64
+
+	err := database.DB.QueryRow(`
+		SELECT r.order_id, r.order_code, r.user_email, r.refund_amount, o.event_id, o.category_name, o.quantity
+		FROM refund_requests r
+		JOIN orders o ON o.id = r.order_id
+		WHERE r.id = $1
+	`, refundID).Scan(&orderID, &orderCode, &userEmail, &amount, &eventID, &categoryName, &quantity)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Data refund tidak ditemukan",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal mengambil detail refund",
+			Error:   err.Error(),
+		})
+	}
+
+	tx, err := database.DB.Begin()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal membuat transaksi DB",
+		})
+	}
+	defer tx.Rollback()
+
+	// Update refund record
+	_, err = tx.Exec(`
+		UPDATE refund_requests
+		SET status = $1, admin_note = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3
+	`, newStatus, input.AdminNote, refundID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui status refund",
+			Error:   err.Error(),
+		})
+	}
+
+	if newStatus == "APPROVED" || newStatus == "COMPLETED" {
+		// Update order status to REFUNDED
+		_, err = tx.Exec(`
+			UPDATE orders SET status = 'REFUNDED' WHERE id = $1
+		`, orderID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+				Success: false,
+				Message: "Gagal memperbarui status order",
+				Error:   err.Error(),
+			})
+		}
+
+		// RESTOCK QUOTA
+		_, err = tx.Exec(`
+			UPDATE ticket_categories
+			SET remaining_quota = remaining_quota + $1
+			WHERE event_id = $2 AND name = $3
+		`, quantity, eventID, categoryName)
+		if err != nil {
+			log.Printf("[WARNING] Restock kuota tiket gagal: %v", err)
+		}
+	} else if newStatus == "REJECTED" {
+		// Restore order status to VERIFIED
+		_, err = tx.Exec(`
+			UPDATE orders SET status = 'VERIFIED' WHERE id = $1
+		`, orderID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+				Success: false,
+				Message: "Gagal mengembalikan status order",
+				Error:   err.Error(),
+			})
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal melakukan commit transaksi",
+			Error:   err.Error(),
+		})
+	}
+
+	// Send status email notification
+	services.SendRefundStatusNotificationEmail(userEmail, orderCode, newStatus, input.AdminNote, amount)
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: fmt.Sprintf("Status pengajuan refund berhasil diubah menjadi %s", newStatus),
+	})
+}
+
 

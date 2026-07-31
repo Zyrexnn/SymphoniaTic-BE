@@ -136,3 +136,52 @@ type CheckInRequest struct {
 	Code string `json:"code"`
 }
 
+// ─── REFUND MODELS ───
+
+type RequestRefundOTPInput struct {
+	OrderCode string `json:"orderCode"`
+	UserEmail string `json:"userEmail"`
+}
+
+type SubmitRefundInput struct {
+	OrderCode     string `json:"orderCode"`
+	UserEmail     string `json:"userEmail"`
+	OTPCode       string `json:"otpCode"`
+	BankName      string `json:"bankName"`
+	AccountNumber string `json:"accountNumber"`
+	AccountHolder string `json:"accountHolder"`
+	Reason        string `json:"reason"`
+}
+
+type RefundRequestRecord struct {
+	ID            string    `json:"id"`
+	OrderID       string    `json:"orderId"`
+	OrderCode     string    `json:"orderCode"`
+	UserEmail     string    `json:"userEmail"`
+	BankName      string    `json:"bankName"`
+	AccountNumber string    `json:"accountNumber"`
+	AccountHolder string    `json:"accountHolder"`
+	Reason        string    `json:"reason"`
+	RefundAmount  float64   `json:"refundAmount"`
+	Status        string    `json:"status"`
+	AdminNote     string    `json:"adminNote"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+
+	// Joined details for UI/Admin
+	EventTitle   string `json:"eventTitle,omitempty"`
+	CategoryName string `json:"categoryName,omitempty"`
+	Quantity     int    `json:"quantity,omitempty"`
+	UserName     string `json:"userName,omitempty"`
+}
+
+type UpdateRefundStatusRequest struct {
+	Status    string `json:"status"`
+	AdminNote string `json:"adminNote"`
+}
+
+type CheckRefundStatusRequest struct {
+	OrderCode string `json:"orderCode"`
+	UserEmail string `json:"userEmail"`
+}
+
