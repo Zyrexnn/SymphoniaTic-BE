@@ -34,6 +34,8 @@ type EventItem struct {
 	Organizer          string           `json:"organizer"`
 	Subtitle           string           `json:"subtitle"`
 	Description        string           `json:"description"`
+	IsClosed           bool             `json:"isClosed"`
+	EventDateTime      *time.Time       `json:"eventDateTime,omitempty"`
 	Rundown            []RundownItem    `json:"rundown"`
 	Categories         []TicketCategory `json:"categories"`
 }
