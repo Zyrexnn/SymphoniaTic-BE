@@ -43,6 +43,8 @@ func main() {
 		AllowCredentials: true,
 	}))
 
+	app.Static("/uploads", "./uploads")
+
 	api := app.Group("/api/v1")
 
 	// ─── Public Endpoints ───
@@ -60,10 +62,12 @@ func main() {
 	admin := api.Group("/admin")
 	admin.Post("/login", controllers.AdminLogin)
 	admin.Get("/dashboard", controllers.GetAdminDashboardMetrics)
+	admin.Post("/upload", controllers.UploadImage)
 
 	// Admin Event CRUD Routes
 	admin.Post("/events", controllers.CreateEvent)
 	admin.Put("/events/:id", controllers.UpdateEvent)
+	admin.Patch("/events/:id/toggle-close", controllers.ToggleEventClose)
 	admin.Delete("/events/:id", controllers.DeleteEvent)
 
 	// Admin Category CRUD Routes

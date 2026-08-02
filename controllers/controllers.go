@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,7 +21,25 @@ import (
 // GET /api/v1/events
 func GetEvents(c *fiber.Ctx) error {
 	rows, err := database.DB.Query(`
-		SELECT id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description
+		SELECT 
+			id, 
+			COALESCE(title, ''), 
+			COALESCE(artist, ''), 
+			COALESCE(venue, ''), 
+			COALESCE(date, ''), 
+			COALESCE(time, ''), 
+			COALESCE(category, 'SIMFONI UTAMA'), 
+			COALESCE(category_badge_color, 'bg-blue-900/80 text-blue-200 border-blue-500/40'), 
+			COALESCE(image, ''), 
+			COALESCE(audio_url, ''), 
+			COALESCE(conductor, ''), 
+			COALESCE(open_gate, ''), 
+			COALESCE(address, ''), 
+			COALESCE(organizer, ''), 
+			COALESCE(subtitle, ''), 
+			COALESCE(rundown, '[]'::jsonb), 
+			COALESCE(description, ''), 
+			COALESCE(is_closed, FALSE)
 		FROM events
 		ORDER BY created_at ASC
 	`)
@@ -37,8 +56,9 @@ func GetEvents(c *fiber.Ctx) error {
 	for rows.Next() {
 		var e models.EventItem
 		var rundownBytes []byte
-		err := rows.Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description)
+		err := rows.Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description, &e.IsClosed)
 		if err != nil {
+			log.Printf("[GetEvents] Scan error for event %s: %v", e.ID, err)
 			continue
 		}
 		_ = json.Unmarshal(rundownBytes, &e.Rundown)
@@ -77,10 +97,28 @@ func GetEventByID(c *fiber.Ctx) error {
 	var e models.EventItem
 	var rundownBytes []byte
 	err := database.DB.QueryRow(`
-		SELECT id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description
+		SELECT 
+			id, 
+			COALESCE(title, ''), 
+			COALESCE(artist, ''), 
+			COALESCE(venue, ''), 
+			COALESCE(date, ''), 
+			COALESCE(time, ''), 
+			COALESCE(category, 'SIMFONI UTAMA'), 
+			COALESCE(category_badge_color, 'bg-blue-900/80 text-blue-200 border-blue-500/40'), 
+			COALESCE(image, ''), 
+			COALESCE(audio_url, ''), 
+			COALESCE(conductor, ''), 
+			COALESCE(open_gate, ''), 
+			COALESCE(address, ''), 
+			COALESCE(organizer, ''), 
+			COALESCE(subtitle, ''), 
+			COALESCE(rundown, '[]'::jsonb), 
+			COALESCE(description, ''), 
+			COALESCE(is_closed, FALSE)
 		FROM events
 		WHERE id = $1
-	`, eventID).Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description)
+	`, eventID).Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description, &e.IsClosed)
 	_ = json.Unmarshal(rundownBytes, &e.Rundown)
 
 	if err != nil {
@@ -189,16 +227,24 @@ func CreateOrder(c *fiber.Ctx) error {
 	}
 
 	var evtTitle, evtArtist, evtVenue, evtDate, evtTime string
+	var evtClosed bool
 	err = tx.QueryRow(`
-		SELECT title, artist, venue, date, time
+		SELECT title, artist, venue, date, time, is_closed
 		FROM events
 		WHERE id = $1
-	`, eventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime)
+	`, eventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtClosed)
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal mengambil data event",
+		})
+	}
+
+	if evtClosed {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai.",
 		})
 	}
 
@@ -224,10 +270,10 @@ func CreateOrder(c *fiber.Ctx) error {
 	totalPrice := price * float64(req.Quantity)
 	dateFull := fmt.Sprintf("%s @ %s", evtDate, evtTime)
 
-	// Simpan transaksi (Sandbox Auto-Verified Payment Simulation)
+	// Simpan transaksi (Status awal: ISSUED)
 	_, err = tx.Exec(`
 		INSERT INTO orders (id, order_code, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, status, payment_method)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'VERIFIED', 'SANDBOX_PAYMENT')
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ISSUED', 'SANDBOX_PAYMENT')
 	`, orderID, orderCode, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode)
 
 	if err != nil {
@@ -607,7 +653,7 @@ func UpdateTicketCategory(c *fiber.Ctx) error {
 
 	res, err := database.DB.Exec(`
 		UPDATE ticket_categories
-		SET name = $1, price = $2, quota = $3, remaining_quota = $3
+		SET name = $1, price = $2, remaining_quota = GREATEST(0, remaining_quota + ($3 - quota)), quota = $3
 		WHERE id = $4
 	`, req.Name, req.Price, req.Quota, catID)
 
@@ -770,7 +816,7 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 	var totalEvents int
 	var totalOrders int
 
-	_ = database.DB.QueryRow("SELECT COALESCE(SUM(total_price), 0), COALESCE(SUM(quantity), 0), COUNT(*) FROM orders WHERE status IN ('VERIFIED', 'CHECKED_IN')").Scan(&totalRevenue, &ticketsSold, &totalOrders)
+	_ = database.DB.QueryRow("SELECT COALESCE(SUM(total_price), 0), COALESCE(SUM(quantity), 0), COUNT(*) FROM orders WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')").Scan(&totalRevenue, &ticketsSold, &totalOrders)
 	_ = database.DB.QueryRow("SELECT COALESCE(SUM(remaining_quota), 0) FROM ticket_categories").Scan(&remainingQuota)
 	_ = database.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&totalEvents)
 
@@ -778,7 +824,7 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 	rows, err := database.DB.Query(`
 		SELECT e.id, e.title, COALESCE(SUM(o.total_price), 0) as rev, COALESCE(SUM(o.quantity), 0) as sold
 		FROM events e
-		LEFT JOIN orders o ON e.id = o.event_id AND o.status IN ('VERIFIED', 'CHECKED_IN')
+		LEFT JOIN orders o ON e.id = o.event_id AND o.status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
 		GROUP BY e.id, e.title
 		ORDER BY rev DESC
 	`)
@@ -797,6 +843,81 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 			var s EventRevenueStat
 			if scanErr := rows.Scan(&s.EventID, &s.Title, &s.Revenue, &s.TicketsSold); scanErr == nil {
 				eventStats = append(eventStats, s)
+			}
+		}
+	}
+
+	// Query Revenue Timeline (Last 6 Months)
+	timelineRows, err := database.DB.Query(`
+		SELECT 
+			TO_CHAR(created_at, 'Mon') as month,
+			COALESCE(SUM(total_price), 0) as revenue,
+			COALESCE(SUM(quantity), 0) as tickets
+		FROM orders
+		WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
+		GROUP BY TO_CHAR(created_at, 'Mon'), DATE_TRUNC('month', created_at)
+		ORDER BY DATE_TRUNC('month', created_at)
+		LIMIT 6
+	`)
+
+	type TimelineStat struct {
+		Month   string  `json:"month"`
+		Revenue float64 `json:"revenue"`
+		Tickets int     `json:"tickets"`
+	}
+
+	// Pre-populate last 6 months back from today as default
+	revenueTimeline := make([]TimelineStat, 6)
+	now := time.Now()
+	for i := 5; i >= 0; i-- {
+		m := now.AddDate(0, -i, 0)
+		revenueTimeline[5-i] = TimelineStat{
+			Month:   m.Format("Jan"),
+			Revenue: 0,
+			Tickets: 0,
+		}
+	}
+
+	if err == nil {
+		defer timelineRows.Close()
+		for timelineRows.Next() {
+			var t TimelineStat
+			if scanErr := timelineRows.Scan(&t.Month, &t.Revenue, &t.Tickets); scanErr == nil {
+				// Overwrite matching month
+				for idx, item := range revenueTimeline {
+					if strings.EqualFold(item.Month, t.Month) {
+						revenueTimeline[idx].Revenue = t.Revenue
+						revenueTimeline[idx].Tickets = t.Tickets
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// Query Category Distribution
+	catRows, err := database.DB.Query(`
+		SELECT 
+			category_name, 
+			COALESCE(SUM(total_price), 0) as total_val
+		FROM orders
+		WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
+		GROUP BY category_name
+		ORDER BY total_val DESC
+	`)
+
+	type CategoryStat struct {
+		Name  string  `json:"name"`
+		Value float64 `json:"value"`
+	}
+
+	var categoryDistribution []CategoryStat
+	if err == nil {
+		defer catRows.Close()
+		for catRows.Next() {
+			var c CategoryStat
+			if scanErr := catRows.Scan(&c.Name, &c.Value); scanErr == nil {
+				categoryDistribution = append(categoryDistribution, c)
 			}
 		}
 	}
@@ -835,13 +956,15 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 		Success: true,
 		Message: "Metrik admin berhasil diambil",
 		Data: fiber.Map{
-			"totalRevenue":   totalRevenue,
-			"ticketsSold":    ticketsSold,
-			"remainingQuota": remainingQuota,
-			"totalEvents":    totalEvents,
-			"totalOrders":    totalOrders,
-			"eventStats":     eventStats,
-			"recentOrders":   recentOrders,
+			"totalRevenue":         totalRevenue,
+			"ticketsSold":          ticketsSold,
+			"remainingQuota":       remainingQuota,
+			"totalEvents":          totalEvents,
+			"totalOrders":          totalOrders,
+			"eventStats":           eventStats,
+			"recentOrders":         recentOrders,
+			"revenueTimeline":      revenueTimeline,
+			"categoryDistribution": categoryDistribution,
 		},
 	})
 }
@@ -1311,6 +1434,101 @@ func AdminUpdateRefundStatus(c *fiber.Ctx) error {
 	return c.JSON(models.APIResponse{
 		Success: true,
 		Message: fmt.Sprintf("Status pengajuan refund berhasil diubah menjadi %s", newStatus),
+	})
+}
+
+// PATCH /api/v1/admin/events/:id/toggle-close
+func ToggleEventClose(c *fiber.Ctx) error {
+	eventID := c.Params("id")
+	var isClosed bool
+	err := database.DB.QueryRow(`SELECT is_closed FROM events WHERE id = $1`, eventID).Scan(&isClosed)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser tidak ditemukan",
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal mengecek status konser",
+			Error:   err.Error(),
+		})
+	}
+
+	newClosedState := !isClosed
+	_, err = database.DB.Exec(`UPDATE events SET is_closed = $1 WHERE id = $2`, newClosedState, eventID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memperbarui status penutupan konser",
+			Error:   err.Error(),
+		})
+	}
+
+	msg := "Penjualan tiket konser berhasil ditutup"
+	if !newClosedState {
+		msg = "Penjualan tiket konser berhasil dibuka kembali"
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: msg,
+		Data: fiber.Map{
+			"eventId":  eventID,
+			"isClosed": newClosedState,
+		},
+	})
+}
+
+// POST /api/v1/admin/upload
+func UploadImage(c *fiber.Ctx) error {
+	file, err := c.FormFile("image")
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal membaca file gambar",
+			Error:   err.Error(),
+		})
+	}
+
+	// Create uploads directory if not exists
+	if err := os.MkdirAll("./uploads", os.ModePerm); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal membuat folder penyimpanan",
+			Error:   err.Error(),
+		})
+	}
+
+	// Unique filename
+	ext := filepath.Ext(file.Filename)
+	filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), ext)
+	filepath := fmt.Sprintf("./uploads/%s", filename)
+
+	if err := c.SaveFile(file, filepath); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menyimpan file gambar",
+			Error:   err.Error(),
+		})
+	}
+
+	// Dynamic base URL or fallback to localhost
+	baseURL := os.Getenv("API_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:8082"
+	} else {
+		// remove /api/v1 prefix from base URL if it's there
+		baseURL = strings.TrimSuffix(baseURL, "/api/v1")
+	}
+
+	return c.JSON(models.APIResponse{
+		Success: true,
+		Message: "File gambar berhasil diunggah",
+		Data: fiber.Map{
+			"url": fmt.Sprintf("%s/uploads/%s", baseURL, filename),
+		},
 	})
 }
 
