@@ -51,6 +51,7 @@ type CreateOrderRequest struct {
 type OrderRecord struct {
 	ID            string    `json:"id"`
 	OrderCode     string    `json:"orderCode"`
+	UserID        string    `json:"userId,omitempty"`
 	EventID       string    `json:"eventId"`
 	EventTitle    string    `json:"eventTitle"`
 	Artist        string    `json:"artist"`
@@ -260,4 +261,22 @@ type VerifyOTPResponseData struct {
 	ResetToken string `json:"resetToken,omitempty"`
 	Message    string `json:"message"`
 }
+
+type UpdateProfileInput struct {
+	Name  string `json:"name"`
+	Phone string `json:"phone"`
+}
+
+type ChangePasswordInput struct {
+	OldPassword string `json:"oldPassword"`
+	NewPassword string `json:"newPassword"`
+}
+
+type UserDashboardSummary struct {
+	TotalTicketsBought  int `json:"totalTicketsBought"`
+	UpcomingEventsCount int `json:"upcomingEventsCount"`
+	PastEventsCount     int `json:"pastEventsCount"`
+	ActiveRefundsCount  int `json:"activeRefundsCount"`
+}
+
 
