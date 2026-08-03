@@ -71,79 +71,79 @@ High-Performance Native REST API Server untuk Platform Pemesanan Tiket Konser Ma
 Database **`symphoniatic_db`** terdiri dari 4 tabel utama dengan relasi sebagai berikut:
 
 ```mermaid
-erdiagram
+erDiagram
     EVENTS ||--o{ TICKET_CATEGORIES : "memiliki"
-    EVENTS ||--o{ ORDERS : "dipesan pada"
+    EVENTS ||--o{ ORDERS : "dipesan_pada"
     ORDERS ||--o| REFUND_REQUESTS : "mengajukan"
 
     EVENTS {
-        varchar_64 id PK
-        varchar_255 title
-        varchar_255 artist
-        varchar_255 venue
-        varchar_100 date
-        varchar_50 time
-        varchar_100 category
-        varchar_255 category_badge_color
+        string id PK
+        string title
+        string artist
+        string venue
+        string date
+        string time
+        string category
+        string category_badge_color
         text image
         text audio_url
-        varchar_255 conductor
-        varchar_100 open_gate
+        string conductor
+        string open_gate
         text address
-        varchar_255 organizer
-        varchar_255 subtitle
+        string organizer
+        string subtitle
         jsonb rundown
         text description
         boolean is_closed
-        timestamptz event_date_time
-        timestamptz created_at
+        timestamp event_date_time
+        timestamp created_at
     }
 
     TICKET_CATEGORIES {
-        varchar_64 id PK
-        varchar_64 event_id FK
-        varchar_100 name
-        numeric_12_2 price
+        string id PK
+        string event_id FK
+        string name
+        numeric price
         int quota
         int remaining_quota
-        timestamptz created_at
+        timestamp created_at
     }
 
     ORDERS {
-        varchar_64 id PK
-        varchar_100 order_code UK
-        varchar_64 event_id FK
-        varchar_255 event_title
-        varchar_255 artist
-        varchar_255 venue
-        varchar_100 date
-        varchar_100 category_name
+        string id PK
+        string order_code UK
+        string event_id FK
+        string event_title
+        string artist
+        string venue
+        string date
+        string category_name
         int quantity
-        numeric_12_2 total_price
-        varchar_255 user_name
-        varchar_255 user_email
-        varchar_255 qr_code
-        varchar_50 status
-        varchar_50 payment_method
-        timestamptz created_at
+        numeric total_price
+        string user_name
+        string user_email
+        string qr_code
+        string status
+        string payment_method
+        timestamp created_at
     }
 
     REFUND_REQUESTS {
-        varchar_64 id PK
-        varchar_64 order_id FK
-        varchar_100 order_code
-        varchar_255 user_email
-        varchar_100 bank_name
-        varchar_100 account_number
-        varchar_255 account_holder
+        string id PK
+        string order_id FK
+        string order_code
+        string user_email
+        string bank_name
+        string account_number
+        string account_holder
         text reason
-        numeric_12_2 refund_amount
-        varchar_50 status
+        numeric refund_amount
+        string status
         text admin_note
-        varchar_10 otp_code
-        timestamptz otp_expires_at
-        timestamptz created_at
-        timestamptz updated_at
+        string otp_code
+        timestamp otp_expires_at
+        timestamp created_at
+        timestamp updated_at
     }
 ```
 
