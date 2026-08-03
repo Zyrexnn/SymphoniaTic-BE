@@ -7,6 +7,7 @@ import (
 
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
+	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -57,6 +58,19 @@ func main() {
 	api.Post("/refunds/request-otp", controllers.RequestRefundOTP)
 	api.Post("/refunds/submit", controllers.SubmitRefund)
 	api.Post("/refunds/status", controllers.GetRefundStatus)
+
+	// ─── User Authentication Endpoints ───
+	auth := api.Group("/auth")
+	auth.Post("/register/request-otp", controllers.RequestRegisterOTP)
+	auth.Post("/register/verify-otp", controllers.VerifyRegisterOTP)
+	auth.Post("/login/password", controllers.PasswordLogin)
+	auth.Post("/login/request-otp", controllers.RequestLoginOTP)
+	auth.Post("/login/verify-otp", controllers.VerifyLoginOTP)
+	auth.Post("/forgot-password/request-otp", controllers.RequestForgotPasswordOTP)
+	auth.Post("/forgot-password/verify-otp", controllers.VerifyForgotPasswordOTP)
+	auth.Post("/forgot-password/reset", controllers.ResetPassword)
+	auth.Get("/me", middleware.RequireUserAuth, controllers.GetMyProfile)
+
 
 	// ─── Admin Endpoints ───
 	admin := api.Group("/admin")

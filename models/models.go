@@ -187,3 +187,77 @@ type CheckRefundStatusRequest struct {
 	UserEmail string `json:"userEmail"`
 }
 
+// ─── USER & AUTHENTICATION MODELS ───
+
+type UserRecord struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Phone     string    `json:"phone,omitempty"`
+	Role      string    `json:"role"`
+	IsVerified bool     `json:"isVerified"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type AuthOTPRecord struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	OTPCode   string    `json:"otpCode"`
+	Purpose   string    `json:"purpose"`
+	Attempts  int       `json:"attempts"`
+	IsUsed    bool      `json:"isUsed"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type RegisterRequestOTPInput struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+type RegisterVerifyOTPInput struct {
+	Email    string `json:"email"`
+	Name     string `json:"name,omitempty"`
+	OTPCode  string `json:"otpCode"`
+	Password string `json:"password"`
+}
+
+type LoginRequestOTPInput struct {
+	Email string `json:"email"`
+}
+
+type LoginVerifyOTPInput struct {
+	Email   string `json:"email"`
+	OTPCode string `json:"otpCode"`
+}
+
+type PasswordLoginInput struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type ForgotPasswordRequestOTPInput struct {
+	Email string `json:"email"`
+}
+
+type ForgotPasswordVerifyOTPInput struct {
+	Email   string `json:"email"`
+	OTPCode string `json:"otpCode"`
+}
+
+type ResetPasswordInput struct {
+	ResetToken  string `json:"resetToken"`
+	NewPassword string `json:"newPassword"`
+}
+
+type AuthResponseData struct {
+	Token string     `json:"token"`
+	User  UserRecord `json:"user"`
+}
+
+type VerifyOTPResponseData struct {
+	ResetToken string `json:"resetToken,omitempty"`
+	Message    string `json:"message"`
+}
+

@@ -405,3 +405,122 @@ func SendRefundStatusNotificationEmail(userEmail, orderCode, status, adminNote s
 	}()
 }
 
+// SendAuthOTPEmail sends an HTML OTP email for Register, Login, or Forgot Password via Mailpit.
+func SendAuthOTPEmail(userEmail, userName, otpCode, purpose string) {
+	go func() {
+		smtpHost := os.Getenv("SMTP_HOST")
+		if smtpHost == "" {
+			smtpHost = "localhost"
+		}
+		smtpPort := os.Getenv("SMTP_PORT")
+		if smtpPort == "" {
+			smtpPort = "1025"
+		}
+		senderEmail := os.Getenv("SMTP_SENDER_EMAIL")
+		if senderEmail == "" {
+			senderEmail = "noreply@symphoniatic.com"
+		}
+		senderName := os.Getenv("SMTP_SENDER_NAME")
+		if senderName == "" {
+			senderName = "SymphoniaTic Auth System"
+		}
+
+		addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+
+		var title, subtitle, warning string
+		switch purpose {
+		case "REGISTER":
+			title = "VERIFIKASI PENDAFTARAN AKUN"
+			subtitle = "Kode OTP untuk Menyelesaikan Registrasi Akun SymphoniaTic"
+			warning = "Gunakan kode OTP di bawah ini untuk memverifikasi pendaftaran akun Anda."
+		case "LOGIN":
+			title = "KODE OTP MASUK AKUN"
+			subtitle = "Kode OTP Keamanan Login SymphoniaTic"
+			warning = "Gunakan kode OTP di bawah ini untuk masuk ke akun Anda."
+		case "FORGOT_PASSWORD":
+			title = "RESET KATA SANDI AKUN"
+			subtitle = "Kode OTP Pemulihan Kata Sandi SymphoniaTic"
+			warning = "Gunakan kode OTP di bawah ini untuk memulihkan kata sandi akun Anda."
+		default:
+			title = "VERIFIKASI KEAMANAN"
+			subtitle = "Kode OTP Keamanan SymphoniaTic"
+			warning = "Gunakan kode OTP di bawah ini untuk memverifikasi identitas Anda."
+		}
+
+		subject := fmt.Sprintf("🔐 [%s] KODE OTP: %s - SYMPHONIATIC", purpose, otpCode)
+
+		nameDisplay := userName
+		if nameDisplay == "" {
+			nameDisplay = userEmail
+		}
+
+		htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>%s</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 550px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .header { background: linear-gradient(135deg, #1e1b4b 0%%%%, #312e81 100%%%%); padding: 25px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
+        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; letter-spacing: 2px; }
+        .header p { margin: 5px 0 0 0; color: #94a3b8; font-size: 13px; }
+        .content { padding: 30px 25px; text-align: center; }
+        .greeting { text-align: left; color: #cbd5e1; font-size: 15px; margin-bottom: 15px; }
+        .otp-box { background: #0f172a; border: 2px dashed #6366f1; border-radius: 12px; padding: 20px; margin: 25px 0; display: inline-block; width: 80%%%%; }
+        .otp-code { font-size: 36px; font-weight: bold; color: #38bdf8; letter-spacing: 10px; font-family: monospace; }
+        .info { font-size: 13px; color: #94a3b8; margin-top: 15px; }
+        .alert-warning { font-size: 12px; color: #f59e0b; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 10px; margin-top: 20px; text-align: left; }
+        .footer { background: #090d16; padding: 18px; text-align: center; font-size: 12px; color: #64748b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SYMPHONIATIC</h1>
+            <p>%s</p>
+        </div>
+        <div class="content">
+            <div class="greeting">Halo <strong>%s</strong>,</div>
+            <p style="text-align: left; color: #cbd5e1; font-size: 14px; margin: 0;">%s</p>
+
+            <div class="otp-box">
+                <div class="otp-code">%s</div>
+            </div>
+
+            <p class="info">Kode OTP ini berlaku selama <strong>5 menit</strong>. Jangan berikan kode ini kepada siapapun demi menjaga keamanan akun Anda.</p>
+
+            <div class="alert-warning">
+                ⚠️ Jika Anda tidak merasa melakukan permintaan kode ini, abaikan email ini dan pastikan kata sandi Anda tetap aman.
+            </div>
+        </div>
+        <div class="footer">
+            &copy; 2026 SymphoniaTic Security System. Seluruh Hak Cipta Dilindungi.
+        </div>
+    </div>
+</body>
+</html>`, title, subtitle, nameDisplay, warning, otpCode)
+
+		headers := make(map[string]string)
+		headers["From"] = fmt.Sprintf("%s <%s>", senderName, senderEmail)
+		headers["To"] = userEmail
+		headers["Subject"] = subject
+		headers["MIME-Version"] = "1.0"
+		headers["Content-Type"] = "text/html; charset=UTF-8"
+
+		message := ""
+		for k, v := range headers {
+			message += fmt.Sprintf("%s: %s\r\n", k, v)
+		}
+		message += "\r\n" + htmlBody
+
+		err := smtp.SendMail(addr, nil, senderEmail, []string{userEmail}, []byte(message))
+		if err != nil {
+			log.Printf("[MAILPIT-ERROR] Gagal mengirim OTP email [%s] ke %s: %v\n", purpose, userEmail, err)
+		} else {
+			log.Printf("[MAILPIT-SUCCESS] OTP email [%s] berhasil dikirim ke %s via Mailpit (%s)\n", purpose, userEmail, addr)
+		}
+	}()
+}
+
+

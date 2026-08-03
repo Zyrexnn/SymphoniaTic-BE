@@ -122,6 +122,32 @@ func initSchema() {
 
 	CREATE INDEX IF NOT EXISTS idx_refund_requests_order_code ON refund_requests(order_code);
 	CREATE INDEX IF NOT EXISTS idx_refund_requests_status ON refund_requests(status);
+
+	CREATE TABLE IF NOT EXISTS users (
+		id VARCHAR(64) PRIMARY KEY,
+		email VARCHAR(255) UNIQUE NOT NULL,
+		name VARCHAR(255) NOT NULL,
+		phone VARCHAR(50) DEFAULT '',
+		password_hash VARCHAR(255) DEFAULT '',
+		role VARCHAR(50) DEFAULT 'USER',
+		is_verified BOOLEAN DEFAULT TRUE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS auth_otps (
+		id VARCHAR(64) PRIMARY KEY,
+		email VARCHAR(255) NOT NULL,
+		otp_code VARCHAR(10) NOT NULL,
+		purpose VARCHAR(50) NOT NULL,
+		attempts INT DEFAULT 0,
+		is_used BOOLEAN DEFAULT FALSE,
+		expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+	CREATE INDEX IF NOT EXISTS idx_auth_otps_email_purpose ON auth_otps(email, purpose);
 	`
 
 	_, err := DB.Exec(schemaQuery)
@@ -129,7 +155,7 @@ func initSchema() {
 		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
 	}
 
-	log.Println("✅ Skema database PostgreSQL (events, ticket_categories, orders) siap!")
+	log.Println("✅ Skema database PostgreSQL (events, ticket_categories, orders, users, auth_otps) siap!")
 	seedInitialData()
 }
 

@@ -14,11 +14,12 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/services"
+	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
 
-// GET /api/v1/events
+// GET /api/v1/events (Optimized Batch Loading - Exactly 2 Queries Total)
 func GetEvents(c *fiber.Ctx) error {
 	rows, err := database.DB.Query(`
 		SELECT 
@@ -44,11 +45,7 @@ func GetEvents(c *fiber.Ctx) error {
 		ORDER BY created_at ASC
 	`)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal mengambil data konser",
-			Error:   err.Error(),
-		})
+		return utils.ResponseInternalError(c, "Gagal mengambil data konser", err)
 	}
 	defer rows.Close()
 
@@ -62,33 +59,35 @@ func GetEvents(c *fiber.Ctx) error {
 			continue
 		}
 		_ = json.Unmarshal(rundownBytes, &e.Rundown)
-
-		catRows, err := database.DB.Query(`
-			SELECT id, event_id, name, price, quota, remaining_quota, created_at
-			FROM ticket_categories
-			WHERE event_id = $1
-			ORDER BY price DESC
-		`, e.ID)
-		if err == nil {
-			var cats []models.TicketCategory
-			for catRows.Next() {
-				var cat models.TicketCategory
-				if scanErr := catRows.Scan(&cat.ID, &cat.EventID, &cat.Name, &cat.Price, &cat.Quota, &cat.RemainingQuota, &cat.CreatedAt); scanErr == nil {
-					cats = append(cats, cat)
-				}
-			}
-			catRows.Close()
-			e.Categories = cats
-		}
-
+		e.Categories = []models.TicketCategory{} // non-nil empty slice
 		events = append(events, e)
 	}
 
-	return c.JSON(models.APIResponse{
-		Success: true,
-		Message: "Berhasil mengambil data konser",
-		Data:    events,
-	})
+	// Batch loading categories in a single query to eliminate N+1 overhead
+	if len(events) > 0 {
+		catRows, err := database.DB.Query(`
+			SELECT id, event_id, name, price, quota, remaining_quota, created_at
+			FROM ticket_categories
+			ORDER BY price DESC
+		`)
+		if err == nil {
+			defer catRows.Close()
+			catMap := make(map[string][]models.TicketCategory)
+			for catRows.Next() {
+				var cat models.TicketCategory
+				if scanErr := catRows.Scan(&cat.ID, &cat.EventID, &cat.Name, &cat.Price, &cat.Quota, &cat.RemainingQuota, &cat.CreatedAt); scanErr == nil {
+					catMap[cat.EventID] = append(catMap[cat.EventID], cat)
+				}
+			}
+			for i := range events {
+				if cats, exists := catMap[events[i].ID]; exists {
+					events[i].Categories = cats
+				}
+			}
+		}
+	}
+
+	return utils.ResponseOK(c, "Berhasil mengambil data konser", events)
 }
 
 // GET /api/v1/events/:id
@@ -123,18 +122,12 @@ func GetEventByID(c *fiber.Ctx) error {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
-				Success: false,
-				Message: "Konser tidak ditemukan",
-			})
+			return utils.ResponseNotFound(c, "Konser tidak ditemukan")
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal mengambil detail konser",
-			Error:   err.Error(),
-		})
+		return utils.ResponseInternalError(c, "Gagal mengambil detail konser", err)
 	}
 
+	e.Categories = []models.TicketCategory{}
 	catRows, err := database.DB.Query(`
 		SELECT id, event_id, name, price, quota, remaining_quota, created_at
 		FROM ticket_categories
@@ -142,22 +135,16 @@ func GetEventByID(c *fiber.Ctx) error {
 		ORDER BY price DESC
 	`, e.ID)
 	if err == nil {
-		var cats []models.TicketCategory
+		defer catRows.Close()
 		for catRows.Next() {
 			var cat models.TicketCategory
 			if scanErr := catRows.Scan(&cat.ID, &cat.EventID, &cat.Name, &cat.Price, &cat.Quota, &cat.RemainingQuota, &cat.CreatedAt); scanErr == nil {
-				cats = append(cats, cat)
+				e.Categories = append(e.Categories, cat)
 			}
 		}
-		catRows.Close()
-		e.Categories = cats
 	}
 
-	return c.JSON(models.APIResponse{
-		Success: true,
-		Message: "Berhasil mengambil detail konser",
-		Data:    e,
-	})
+	return utils.ResponseOK(c, "Berhasil mengambil detail konser", e)
 }
 
 // POST /api/v1/orders (Guest Checkout dengan Row Locking & Atomic Quota Deduction)
@@ -262,9 +249,12 @@ func CreateOrder(c *fiber.Ctx) error {
 		})
 	}
 
-	// Generate kode pesanan & QR Code
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	orderCode := fmt.Sprintf("SYM-%d", r.Intn(900000)+100000)
+	// Generate kode pesanan & QR Code secara kriptografis aman
+	randomNum, err := utils.GenerateCryptoOTP()
+	if err != nil {
+		randomNum = fmt.Sprintf("%d", time.Now().UnixNano()%900000+100000)
+	}
+	orderCode := "SYM-" + randomNum
 	orderID := uuid.New().String()
 	qrCode := fmt.Sprintf("QR-%s", orderCode)
 	totalPrice := price * float64(req.Quantity)
