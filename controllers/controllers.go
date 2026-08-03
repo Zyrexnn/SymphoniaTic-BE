@@ -158,26 +158,33 @@ func CreateOrder(c *fiber.Ctx) error {
 		})
 	}
 
+	var userID string
+	authHeader := c.Get("Authorization")
+	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := utils.ValidateUserToken(tokenStr)
+		if err == nil && claims != nil {
+			userID = claims.UserID
+			if req.UserEmail == "" {
+				req.UserEmail = claims.Email
+			}
+			if req.UserName == "" {
+				_ = database.DB.QueryRow("SELECT name FROM users WHERE id = $1", userID).Scan(&req.UserName)
+			}
+		}
+	}
+
 	if req.UserName == "" || req.UserEmail == "" || req.TicketCategoryID == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: "Nama, Email, dan Kategori Tiket wajib diisi",
-		})
+		return utils.ResponseBadRequest(c, "Nama, Email, dan Kategori Tiket wajib diisi")
 	}
 
 	if req.Quantity < 1 || req.Quantity > 4 {
-		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: "Maksimal pemesanan adalah 1 hingga 4 tiket per transaksi",
-		})
+		return utils.ResponseBadRequest(c, "Maksimal pemesanan adalah 1 hingga 4 tiket per transaksi")
 	}
 
 	tx, err := database.DB.Begin()
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal memulai transaksi basis data",
-		})
+		return utils.ResponseInternalError(c, "Gagal memulai transaksi basis data", err)
 	}
 	defer tx.Rollback()
 
@@ -195,22 +202,13 @@ func CreateOrder(c *fiber.Ctx) error {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return c.Status(fiber.StatusNotFound).JSON(models.APIResponse{
-				Success: false,
-				Message: "Kategori tiket tidak ditemukan",
-			})
+			return utils.ResponseNotFound(c, "Kategori tiket tidak ditemukan")
 		}
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal memverifikasi kuota tiket",
-		})
+		return utils.ResponseInternalError(c, "Gagal memverifikasi kuota tiket", err)
 	}
 
 	if remainingQuota < req.Quantity {
-		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: fmt.Sprintf("Kuota tiket tidak mencukupi (sisa kuota: %d)", remainingQuota),
-		})
+		return utils.ResponseBadRequest(c, fmt.Sprintf("Kuota tiket tidak mencukupi (sisa kuota: %d)", remainingQuota))
 	}
 
 	var evtTitle, evtArtist, evtVenue, evtDate, evtTime string
@@ -222,17 +220,11 @@ func CreateOrder(c *fiber.Ctx) error {
 	`, eventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtClosed)
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal mengambil data event",
-		})
+		return utils.ResponseInternalError(c, "Gagal mengambil data event", err)
 	}
 
 	if evtClosed {
-		return c.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: "Penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai.",
-		})
+		return utils.ResponseBadRequest(c, "Penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai.")
 	}
 
 	// Potong kuota secara atomic
@@ -243,10 +235,7 @@ func CreateOrder(c *fiber.Ctx) error {
 		WHERE id = $2
 	`, newRemaining, catID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal memperbarui kuota tiket",
-		})
+		return utils.ResponseInternalError(c, "Gagal memperbarui kuota tiket", err)
 	}
 
 	// Generate kode pesanan & QR Code secara kriptografis aman
@@ -262,16 +251,12 @@ func CreateOrder(c *fiber.Ctx) error {
 
 	// Simpan transaksi (Status awal: ISSUED)
 	_, err = tx.Exec(`
-		INSERT INTO orders (id, order_code, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, status, payment_method)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ISSUED', 'SANDBOX_PAYMENT')
-	`, orderID, orderCode, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode)
+		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, status, payment_method)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'ISSUED', 'SANDBOX_PAYMENT')
+	`, orderID, orderCode, userID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode)
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
-			Success: false,
-			Message: "Gagal membuat pesanan tiket",
-			Error:   err.Error(),
-		})
+		return utils.ResponseInternalError(c, "Gagal membuat pesanan tiket", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -284,6 +269,7 @@ func CreateOrder(c *fiber.Ctx) error {
 	resOrder := models.OrderRecord{
 		ID:            orderID,
 		OrderCode:     orderCode,
+		UserID:        userID,
 		EventID:       eventID,
 		EventTitle:    evtTitle,
 		Artist:        evtArtist,
@@ -303,11 +289,7 @@ func CreateOrder(c *fiber.Ctx) error {
 	// Kirim E-Ticket secara asinkron ke Mailpit SMTP
 	services.SendETicketEmail(resOrder)
 
-	return c.Status(fiber.StatusCreated).JSON(models.APIResponse{
-		Success: true,
-		Message: "Simulasi Pembayaran Sandbox Berhasil & E-Ticket Terbit!",
-		Data:    resOrder,
-	})
+	return utils.ResponseCreated(c, "Simulasi Pembayaran Sandbox Berhasil & E-Ticket Terbit!", resOrder)
 }
 
 // GET /api/v1/tickets/lookup?code=SYM-123456 (Public Lookup Tiket Tanpa Login)
