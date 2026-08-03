@@ -71,6 +71,14 @@ func main() {
 	auth.Post("/forgot-password/reset", controllers.ResetPassword)
 	auth.Get("/me", middleware.RequireUserAuth, controllers.GetMyProfile)
 
+	// ─── Protected User Account Endpoints ───
+	userGroup := api.Group("/user", middleware.RequireUserAuth)
+	userGroup.Get("/orders", controllers.GetUserOrders)
+	userGroup.Get("/orders/:orderCode", controllers.GetUserOrderByCode)
+	userGroup.Put("/profile", controllers.UpdateUserProfile)
+	userGroup.Post("/change-password", controllers.ChangeUserPassword)
+	userGroup.Get("/dashboard-summary", controllers.GetUserDashboardSummary)
+	userGroup.Get("/refunds", controllers.GetUserRefunds)
 
 	// ─── Admin Endpoints ───
 	admin := api.Group("/admin")
