@@ -187,32 +187,32 @@ func GetUserDashboardSummary(c *fiber.Ctx) error {
 
 	var summary models.UserDashboardSummary
 
-	// 1. Total tiket dibeli
-	_ = database.DB.QueryRow(`
-		SELECT COALESCE(SUM(quantity), 0)
-		FROM orders
-		WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) != 'REFUNDED'
-	`, userID, userEmail).Scan(&summary.TotalTicketsBought)
-
-	// 2. Konser mendatang vs berlalu
-	_ = database.DB.QueryRow(`
-		SELECT COUNT(*)
-		FROM orders
-		WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) = 'ISSUED'
-	`, userID, userEmail).Scan(&summary.UpcomingEventsCount)
-
-	_ = database.DB.QueryRow(`
-		SELECT COUNT(*)
-		FROM orders
-		WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) = 'CHECKED_IN'
-	`, userID, userEmail).Scan(&summary.PastEventsCount)
-
-	// 3. Refund aktif
-	_ = database.DB.QueryRow(`
-		SELECT COUNT(*)
-		FROM refund_requests
-		WHERE LOWER(user_email) = LOWER($1) AND UPPER(status) = 'PENDING'
-	`, userEmail).Scan(&summary.ActiveRefundsCount)
+	err := database.DB.QueryRow(`
+		WITH user_orders AS (
+			SELECT status, quantity
+			FROM orders
+			WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2))
+		),
+		user_refunds AS (
+			SELECT status
+			FROM refund_requests
+			WHERE LOWER(user_email) = LOWER($2)
+		)
+		SELECT
+			COALESCE(SUM(CASE WHEN UPPER(status) != 'REFUNDED' THEN quantity ELSE 0 END), 0),
+			COALESCE(COUNT(CASE WHEN UPPER(status) = 'ISSUED' THEN 1 END), 0),
+			COALESCE(COUNT(CASE WHEN UPPER(status) = 'CHECKED_IN' THEN 1 END), 0),
+			COALESCE((SELECT COUNT(*) FROM user_refunds WHERE UPPER(status) = 'PENDING'), 0)
+		FROM user_orders
+	`, userID, userEmail).Scan(
+		&summary.TotalTicketsBought,
+		&summary.UpcomingEventsCount,
+		&summary.PastEventsCount,
+		&summary.ActiveRefundsCount,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		return utils.ResponseInternalError(c, "Gagal mengambil ringkasan statistik akun.", err)
+	}
 
 	return utils.ResponseOK(c, "Berhasil mengambil ringkasan statistik akun.", summary)
 }
