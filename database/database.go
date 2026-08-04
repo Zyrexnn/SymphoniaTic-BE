@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -37,6 +38,11 @@ func ConnectDB() {
 	if err != nil {
 		log.Fatalf("Gagal membuka koneksi PostgreSQL: %v", err)
 	}
+
+	DB.SetMaxOpenConns(25)
+	DB.SetMaxIdleConns(25)
+	DB.SetConnMaxLifetime(5 * time.Minute)
+	DB.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err = DB.Ping(); err != nil {
 		log.Fatalf("Gagal ping PostgreSQL: %v", err)
@@ -104,6 +110,9 @@ func initSchema() {
 
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) DEFAULT '';
 	CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+	CREATE INDEX IF NOT EXISTS idx_orders_event_id ON orders(event_id);
+	CREATE INDEX IF NOT EXISTS idx_orders_user_email_lower ON orders(LOWER(user_email));
+	CREATE INDEX IF NOT EXISTS idx_ticket_categories_event_id ON ticket_categories(event_id);
 
 	CREATE TABLE IF NOT EXISTS refund_requests (
 		id VARCHAR(64) PRIMARY KEY,
@@ -123,8 +132,10 @@ func initSchema() {
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE INDEX IF NOT EXISTS idx_refund_requests_order_id ON refund_requests(order_id);
 	CREATE INDEX IF NOT EXISTS idx_refund_requests_order_code ON refund_requests(order_code);
 	CREATE INDEX IF NOT EXISTS idx_refund_requests_status ON refund_requests(status);
+	CREATE INDEX IF NOT EXISTS idx_refund_requests_user_email_lower ON refund_requests(LOWER(user_email));
 
 	CREATE TABLE IF NOT EXISTS users (
 		id VARCHAR(64) PRIMARY KEY,

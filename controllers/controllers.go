@@ -17,6 +17,7 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // GET /api/v1/events (Optimized Batch Loading - Exactly 2 Queries Total)
@@ -63,13 +64,18 @@ func GetEvents(c *fiber.Ctx) error {
 		events = append(events, e)
 	}
 
-	// Batch loading categories in a single query to eliminate N+1 overhead
+	// Batch loading categories in a single query filtered by current event IDs to eliminate N+1 overhead
 	if len(events) > 0 {
+		eventIDs := make([]string, len(events))
+		for i, e := range events {
+			eventIDs[i] = e.ID
+		}
 		catRows, err := database.DB.Query(`
 			SELECT id, event_id, name, price, quota, remaining_quota, created_at
 			FROM ticket_categories
+			WHERE event_id = ANY($1)
 			ORDER BY price DESC
-		`)
+		`, pq.Array(eventIDs))
 		if err == nil {
 			defer catRows.Close()
 			catMap := make(map[string][]models.TicketCategory)
@@ -788,9 +794,14 @@ func GetAdminDashboardMetrics(c *fiber.Ctx) error {
 	var totalEvents int
 	var totalOrders int
 
-	_ = database.DB.QueryRow("SELECT COALESCE(SUM(total_price), 0), COALESCE(SUM(quantity), 0), COUNT(*) FROM orders WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')").Scan(&totalRevenue, &ticketsSold, &totalOrders)
-	_ = database.DB.QueryRow("SELECT COALESCE(SUM(remaining_quota), 0) FROM ticket_categories").Scan(&remainingQuota)
-	_ = database.DB.QueryRow("SELECT COUNT(*) FROM events").Scan(&totalEvents)
+	_ = database.DB.QueryRow(`
+		SELECT
+			COALESCE((SELECT SUM(total_price) FROM orders WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')), 0),
+			COALESCE((SELECT SUM(quantity) FROM orders WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')), 0),
+			COALESCE((SELECT SUM(remaining_quota) FROM ticket_categories), 0),
+			COALESCE((SELECT COUNT(*) FROM events), 0)
+	`).Scan(&totalRevenue, &ticketsSold, &totalOrders, &remainingQuota, &totalEvents)
 
 	// Revenue by Event breakdown
 	rows, err := database.DB.Query(`
