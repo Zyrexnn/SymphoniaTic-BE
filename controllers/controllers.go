@@ -1,3 +1,4 @@
+
 package controllers
 
 import (
@@ -15,9 +16,9 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/services"
 	"github.com/Zyrexnn/SymphoniaTic-be/utils"
+	"github.com/lib/pq"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 // GET /api/v1/events (Optimized Batch Loading - Exactly 2 Queries Total)
