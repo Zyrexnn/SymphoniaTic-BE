@@ -21,7 +21,13 @@ bin/
 *.swp
 *.swo
 
+# Documentation & Internal Guides (Ignored)
+panduan.md
+[pP][rR][dD]*.md
+!DESIGN.md
+!design.md
+!README.md
+
 # Uploads
 uploads/*
 !uploads/.gitkeep
-

@@ -1,0 +1,6 @@
+server.exe
+.git
+.gitignore
+.env
+tmp/
+*.log
