@@ -10,7 +10,17 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// GET /api/v1/user/orders - Ambil semua riwayat pesanan milik pengguna terautentikasi
+// GetUserOrders godoc
+// @Summary Mengambil riwayat pesanan pengguna
+// @Description Mengambil semua riwayat tiket/pesanan milik user yang sedang login.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param status query string false "Filter status pesanan (ISSUED, CHECKED_IN, REFUNDED, dll)"
+// @Success 200 {object} models.APIResponse{data=[]models.OrderRecord} "Berhasil mengambil riwayat pesanan"
+// @Failure 401 {object} models.APIResponse "Sesi tidak valid"
+// @Router /user/orders [get]
 func GetUserOrders(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	userEmail, _ := c.Locals("user_email").(string)
@@ -60,7 +70,17 @@ func GetUserOrders(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Berhasil mengambil riwayat pesanan.", orders)
 }
 
-// GET /api/v1/user/orders/:orderCode - Ambil detail 1 pesanan milik pengguna
+// GetUserOrderByCode godoc
+// @Summary Mengambil detail 1 pesanan pengguna
+// @Description Mengambil detail spesifik pesanan berdasarkan kode pesanan untuk user yang login.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param orderCode path string true "Order Code"
+// @Success 200 {object} models.APIResponse{data=models.OrderRecord} "Berhasil mengambil detail pesanan"
+// @Failure 404 {object} models.APIResponse "Pesanan tidak ditemukan"
+// @Router /user/orders/{orderCode} [get]
 func GetUserOrderByCode(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	userEmail, _ := c.Locals("user_email").(string)
@@ -93,7 +113,17 @@ func GetUserOrderByCode(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Berhasil mengambil detail pesanan.", o)
 }
 
-// PUT /api/v1/user/profile - Update Nama Lengkap & Nomor HP
+// UpdateUserProfile godoc
+// @Summary Memperbarui profil pengguna
+// @Description Mengubah nama lengkap dan nomor telepon pengguna terautentikasi.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param payload body models.UpdateProfileInput true "Update Profile Payload"
+// @Success 200 {object} models.APIResponse{data=models.UserRecord} "Profil berhasil diperbarui"
+// @Failure 400 {object} models.APIResponse "Nama wajib diisi"
+// @Router /user/profile [put]
 func UpdateUserProfile(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	if userID == "" {
@@ -137,7 +167,17 @@ func UpdateUserProfile(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Profil berhasil diperbarui.", updatedUser)
 }
 
-// POST /api/v1/user/change-password - Ubah kata sandi dari dalam akun
+// ChangeUserPassword godoc
+// @Summary Mengubah kata sandi akun
+// @Description Mengubah kata sandi user dengan mengonfirmasi kata sandi lama.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param payload body models.ChangePasswordInput true "Change Password Payload"
+// @Success 200 {object} models.APIResponse "Kata sandi akun Anda berhasil diperbarui"
+// @Failure 400 {object} models.APIResponse "Kata sandi lama salah / minimal 6 karakter"
+// @Router /user/change-password [post]
 func ChangeUserPassword(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	if userID == "" {
@@ -180,7 +220,15 @@ func ChangeUserPassword(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Kata sandi akun Anda berhasil diperbarui.", nil)
 }
 
-// GET /api/v1/user/dashboard-summary - Ringkasan statistik akun user
+// GetUserDashboardSummary godoc
+// @Summary Mengambil ringkasan statistik dashboard user
+// @Description Mengambil statistik total tiket dibeli, konser mendatang, konser selesai, dan refund aktif.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Success 200 {object} models.APIResponse{data=models.UserDashboardSummary} "Berhasil mengambil ringkasan statistik akun"
+// @Router /user/dashboard-summary [get]
 func GetUserDashboardSummary(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	userEmail, _ := c.Locals("user_email").(string)
@@ -217,7 +265,15 @@ func GetUserDashboardSummary(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Berhasil mengambil ringkasan statistik akun.", summary)
 }
 
-// GET /api/v1/user/refunds - Monitoring status pengajuan refund user
+// GetUserRefunds godoc
+// @Summary Mengambil daftar pengajuan refund pengguna
+// @Description Mengambil riwayat pengajuan refund tiket beserta status persetujuan dari admin.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Success 200 {object} models.APIResponse{data=[]models.RefundRequestRecord} "Berhasil mengambil data pengajuan refund"
+// @Router /user/refunds [get]
 func GetUserRefunds(c *fiber.Ctx) error {
 	userEmail, _ := c.Locals("user_email").(string)
 	if userEmail == "" {

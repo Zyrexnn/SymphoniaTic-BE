@@ -1,0 +1,790 @@
+basePath: /api/v1
+definitions:
+  models.APIResponse:
+    properties:
+      data: {}
+      error:
+        type: string
+      message:
+        type: string
+      success:
+        type: boolean
+    type: object
+  models.AdminLoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  models.AuthResponseData:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/models.UserRecord'
+    type: object
+  models.ChangePasswordInput:
+    properties:
+      newPassword:
+        type: string
+      oldPassword:
+        type: string
+    type: object
+  models.CreateCategoryInput:
+    properties:
+      name:
+        type: string
+      price:
+        type: number
+      quota:
+        type: integer
+    type: object
+  models.CreateEventRequest:
+    properties:
+      address:
+        type: string
+      artist:
+        type: string
+      audioUrl:
+        type: string
+      categories:
+        items:
+          $ref: '#/definitions/models.CreateCategoryInput'
+        type: array
+      category:
+        type: string
+      categoryBadgeColor:
+        type: string
+      conductor:
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+      image:
+        type: string
+      openGate:
+        type: string
+      organizer:
+        type: string
+      rundown:
+        items:
+          $ref: '#/definitions/models.RundownItem'
+        type: array
+      subtitle:
+        type: string
+      time:
+        type: string
+      title:
+        type: string
+      venue:
+        type: string
+    type: object
+  models.CreateOrderRequest:
+    properties:
+      eventId:
+        type: string
+      quantity:
+        type: integer
+      ticketCategoryId:
+        type: string
+      userEmail:
+        type: string
+      userName:
+        type: string
+    type: object
+  models.EventItem:
+    properties:
+      address:
+        type: string
+      artist:
+        type: string
+      audioUrl:
+        type: string
+      categories:
+        items:
+          $ref: '#/definitions/models.TicketCategory'
+        type: array
+      category:
+        type: string
+      categoryBadgeColor:
+        type: string
+      conductor:
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+      eventDateTime:
+        type: string
+      id:
+        type: string
+      image:
+        type: string
+      isClosed:
+        type: boolean
+      openGate:
+        type: string
+      organizer:
+        type: string
+      rundown:
+        items:
+          $ref: '#/definitions/models.RundownItem'
+        type: array
+      subtitle:
+        type: string
+      time:
+        type: string
+      title:
+        type: string
+      venue:
+        type: string
+    type: object
+  models.OrderRecord:
+    properties:
+      artist:
+        type: string
+      categoryName:
+        type: string
+      createdAt:
+        type: string
+      date:
+        type: string
+      eventId:
+        type: string
+      eventTitle:
+        type: string
+      id:
+        type: string
+      orderCode:
+        type: string
+      paymentMethod:
+        type: string
+      qrCode:
+        type: string
+      quantity:
+        type: integer
+      status:
+        type: string
+      totalPrice:
+        type: number
+      userEmail:
+        type: string
+      userId:
+        type: string
+      userName:
+        type: string
+      venue:
+        type: string
+    type: object
+  models.PasswordLoginInput:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  models.RefundRequestRecord:
+    properties:
+      accountHolder:
+        type: string
+      accountNumber:
+        type: string
+      adminNote:
+        type: string
+      bankName:
+        type: string
+      categoryName:
+        type: string
+      createdAt:
+        type: string
+      eventTitle:
+        description: Joined details for UI/Admin
+        type: string
+      id:
+        type: string
+      orderCode:
+        type: string
+      orderId:
+        type: string
+      quantity:
+        type: integer
+      reason:
+        type: string
+      refundAmount:
+        type: number
+      status:
+        type: string
+      updatedAt:
+        type: string
+      userEmail:
+        type: string
+      userName:
+        type: string
+    type: object
+  models.RegisterRequestOTPInput:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+    type: object
+  models.RegisterVerifyOTPInput:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      otpCode:
+        type: string
+      password:
+        type: string
+    type: object
+  models.RundownItem:
+    properties:
+      activity:
+        type: string
+      time:
+        type: string
+    type: object
+  models.TicketCategory:
+    properties:
+      createdAt:
+        type: string
+      eventId:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      price:
+        type: number
+      quota:
+        type: integer
+      remainingQuota:
+        type: integer
+    type: object
+  models.UpdateProfileInput:
+    properties:
+      name:
+        type: string
+      phone:
+        type: string
+    type: object
+  models.UserDashboardSummary:
+    properties:
+      activeRefundsCount:
+        type: integer
+      pastEventsCount:
+        type: integer
+      totalTicketsBought:
+        type: integer
+      upcomingEventsCount:
+        type: integer
+    type: object
+  models.UserRecord:
+    properties:
+      createdAt:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      isVerified:
+        type: boolean
+      name:
+        type: string
+      phone:
+        type: string
+      role:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+host: localhost:8082
+info:
+  contact:
+    email: support@symphoniatic.id
+    name: SymphoniaTic API Support
+  description: Interactive OpenAPI/Swagger UI documentation for SymphoniaTic Concert
+    Ticketing Platform.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: SymphoniaTic REST API Documentation
+  version: "1.0"
+paths:
+  /admin/events:
+    post:
+      consumes:
+      - application/json
+      description: Menambahkan event konser baru ke dalam sistem beserta kategori
+        tiket awal.
+      parameters:
+      - description: Create Event Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateEventRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Berhasil menambahkan konser baru
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.EventItem'
+              type: object
+        "400":
+          description: Judul, Artis, Venue, Tanggal wajib diisi
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Membuat event/konser baru (Admin)
+      tags:
+      - Admin - Events Management
+  /admin/login:
+    post:
+      consumes:
+      - application/json
+      description: Autentikasi khusus akun administrator untuk mengakses panel manajemen
+        admin.
+      parameters:
+      - description: Admin Login Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.AdminLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login Admin berhasil
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.AuthResponseData'
+              type: object
+        "401":
+          description: Username atau Password Admin salah
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Login Administrator
+      tags:
+      - Auth - Admin
+  /auth/login/password:
+    post:
+      consumes:
+      - application/json
+      description: Autentikasi user menggunakan email dan password tradisional.
+      parameters:
+      - description: Login Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.PasswordLoginInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Login berhasil!
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.AuthResponseData'
+              type: object
+        "401":
+          description: Email atau password salah
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Login dengan Email & Password
+      tags:
+      - Auth - User
+  /auth/register/request-otp:
+    post:
+      consumes:
+      - application/json
+      description: Mengirimkan 6 digit kode OTP registrasi ke email pengguna.
+      parameters:
+      - description: Register Request OTP Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterRequestOTPInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Kode OTP registrasi berhasil dikirim
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Payload tidak valid / Email terdaftar
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "429":
+          description: Cooldown OTP (tunggu 60s)
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Meminta kode OTP untuk registrasi
+      tags:
+      - Auth - User
+  /auth/register/verify-otp:
+    post:
+      consumes:
+      - application/json
+      description: Memverifikasi kode OTP registrasi dan membuat akun baru beserta
+        JWT token.
+      parameters:
+      - description: Register Verify OTP Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterVerifyOTPInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Registrasi akun berhasil!
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.AuthResponseData'
+              type: object
+        "400":
+          description: OTP tidak sesuai / expired
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Verifikasi OTP & Buat Akun Pengguna
+      tags:
+      - Auth - User
+  /events:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil daftar seluruh event/konser yang tersedia lengkap dengan
+        kategori tiket dan rundown.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil data konser
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.EventItem'
+                  type: array
+              type: object
+        "500":
+          description: Gagal mengambil data konser
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Mengambil daftar seluruh konser
+      tags:
+      - Public - Events
+  /events/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail spesifik dari satu konser berdasarkan ID.
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil detail konser
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.EventItem'
+              type: object
+        "404":
+          description: Konser tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Gagal mengambil detail konser
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Mengambil detail konser berdasarkan ID
+      tags:
+      - Public - Events
+  /orders:
+    post:
+      consumes:
+      - application/json
+      description: Membuat pesanan tiket baru untuk event tertentu baik sebagai Guest
+        maupun Logged-in User.
+      parameters:
+      - description: Order Request Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.CreateOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Pemesanan tiket berhasil!
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.OrderRecord'
+              type: object
+        "400":
+          description: Payload tidak valid / Quota habis
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Gagal memproses pemesanan
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Membeli tiket / Membuat pesanan
+      tags:
+      - Public - Orders
+  /tickets/lookup:
+    get:
+      consumes:
+      - application/json
+      description: Mencari detail tiket E-Ticket berdasarkan order code (tanpa login).
+      parameters:
+      - description: 'Order Code (misal: SYM-XXXXXX)'
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tiket ditemukan
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.OrderRecord'
+              type: object
+        "400":
+          description: Parameter code wajib diisi
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "404":
+          description: Tiket tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Lookup tiket berdasarkan kode pesanan
+      tags:
+      - Public - Tickets
+  /user/change-password:
+    post:
+      consumes:
+      - application/json
+      description: Mengubah kata sandi user dengan mengonfirmasi kata sandi lama.
+      parameters:
+      - description: Change Password Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChangePasswordInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Kata sandi akun Anda berhasil diperbarui
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Kata sandi lama salah / minimal 6 karakter
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Mengubah kata sandi akun
+      tags:
+      - User Profile
+  /user/dashboard-summary:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil statistik total tiket dibeli, konser mendatang, konser
+        selesai, dan refund aktif.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil ringkasan statistik akun
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.UserDashboardSummary'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Mengambil ringkasan statistik dashboard user
+      tags:
+      - User Profile
+  /user/orders:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil semua riwayat tiket/pesanan milik user yang sedang login.
+      parameters:
+      - description: Filter status pesanan (ISSUED, CHECKED_IN, REFUNDED, dll)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil riwayat pesanan
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.OrderRecord'
+                  type: array
+              type: object
+        "401":
+          description: Sesi tidak valid
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Mengambil riwayat pesanan pengguna
+      tags:
+      - User Profile
+  /user/orders/{orderCode}:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil detail spesifik pesanan berdasarkan kode pesanan untuk
+        user yang login.
+      parameters:
+      - description: Order Code
+        in: path
+        name: orderCode
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil detail pesanan
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.OrderRecord'
+              type: object
+        "404":
+          description: Pesanan tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Mengambil detail 1 pesanan pengguna
+      tags:
+      - User Profile
+  /user/profile:
+    put:
+      consumes:
+      - application/json
+      description: Mengubah nama lengkap dan nomor telepon pengguna terautentikasi.
+      parameters:
+      - description: Update Profile Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdateProfileInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profil berhasil diperbarui
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.UserRecord'
+              type: object
+        "400":
+          description: Nama wajib diisi
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      security:
+      - BearerAuth: []
+      summary: Memperbarui profil pengguna
+      tags:
+      - User Profile
+  /user/refunds:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil riwayat pengajuan refund tiket beserta status persetujuan
+        dari admin.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil data pengajuan refund
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.RefundRequestRecord'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Mengambil daftar pengajuan refund pengguna
+      tags:
+      - User Profile
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer <your_token>" to authenticate user/admin endpoints.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

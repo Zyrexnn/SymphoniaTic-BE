@@ -16,12 +16,20 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/services"
 	"github.com/Zyrexnn/SymphoniaTic-be/utils"
-	"github.com/lib/pq"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
-// GET /api/v1/events (Optimized Batch Loading - Exactly 2 Queries Total)
+// GetEvents godoc
+// @Summary Mengambil daftar seluruh konser
+// @Description Mengambil daftar seluruh event/konser yang tersedia lengkap dengan kategori tiket dan rundown.
+// @Tags Public - Events
+// @Accept json
+// @Produce json
+// @Success 200 {object} models.APIResponse{data=[]models.EventItem} "Berhasil mengambil data konser"
+// @Failure 500 {object} models.APIResponse "Gagal mengambil data konser"
+// @Router /events [get]
 func GetEvents(c *fiber.Ctx) error {
 	rows, err := database.DB.Query(`
 		SELECT 
@@ -55,9 +63,28 @@ func GetEvents(c *fiber.Ctx) error {
 	for rows.Next() {
 		var e models.EventItem
 		var rundownBytes []byte
-		err := rows.Scan(&e.ID, &e.Title, &e.Artist, &e.Venue, &e.Date, &e.Time, &e.Category, &e.CategoryBadgeColor, &e.Image, &e.AudioURL, &e.Conductor, &e.OpenGate, &e.Address, &e.Organizer, &e.Subtitle, &rundownBytes, &e.Description, &e.IsClosed)
-		if err != nil {
-			log.Printf("[GetEvents] Scan error for event %s: %v", e.ID, err)
+
+		if scanErr := rows.Scan(
+			&e.ID,
+			&e.Title,
+			&e.Artist,
+			&e.Venue,
+			&e.Date,
+			&e.Time,
+			&e.Category,
+			&e.CategoryBadgeColor,
+			&e.Image,
+			&e.AudioURL,
+			&e.Conductor,
+			&e.OpenGate,
+			&e.Address,
+			&e.Organizer,
+			&e.Subtitle,
+			&rundownBytes,
+			&e.Description,
+			&e.IsClosed,
+		); scanErr != nil {
+			log.Println("Scan event error:", scanErr)
 			continue
 		}
 		_ = json.Unmarshal(rundownBytes, &e.Rundown)
@@ -97,7 +124,17 @@ func GetEvents(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Berhasil mengambil data konser", events)
 }
 
-// GET /api/v1/events/:id
+// GetEventByID godoc
+// @Summary Mengambil detail konser berdasarkan ID
+// @Description Mengambil detail spesifik dari satu konser berdasarkan ID.
+// @Tags Public - Events
+// @Accept json
+// @Produce json
+// @Param id path string true "Event ID"
+// @Success 200 {object} models.APIResponse{data=models.EventItem} "Berhasil mengambil detail konser"
+// @Failure 404 {object} models.APIResponse "Konser tidak ditemukan"
+// @Failure 500 {object} models.APIResponse "Gagal mengambil detail konser"
+// @Router /events/{id} [get]
 func GetEventByID(c *fiber.Ctx) error {
 	eventID := c.Params("id")
 	var e models.EventItem
@@ -154,7 +191,17 @@ func GetEventByID(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Berhasil mengambil detail konser", e)
 }
 
-// POST /api/v1/orders (Guest Checkout dengan Row Locking & Atomic Quota Deduction)
+// CreateOrder godoc
+// @Summary Membeli tiket / Membuat pesanan
+// @Description Membuat pesanan tiket baru untuk event tertentu baik sebagai Guest maupun Logged-in User.
+// @Tags Public - Orders
+// @Accept json
+// @Produce json
+// @Param payload body models.CreateOrderRequest true "Order Request Payload"
+// @Success 201 {object} models.APIResponse{data=models.OrderRecord} "Pemesanan tiket berhasil!"
+// @Failure 400 {object} models.APIResponse "Payload tidak valid / Quota habis"
+// @Failure 500 {object} models.APIResponse "Gagal memproses pemesanan"
+// @Router /orders [post]
 func CreateOrder(c *fiber.Ctx) error {
 	var req models.CreateOrderRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -299,7 +346,17 @@ func CreateOrder(c *fiber.Ctx) error {
 	return utils.ResponseCreated(c, "Simulasi Pembayaran Sandbox Berhasil & E-Ticket Terbit!", resOrder)
 }
 
-// GET /api/v1/tickets/lookup?code=SYM-123456 (Public Lookup Tiket Tanpa Login)
+// LookupTicketByCode godoc
+// @Summary Lookup tiket berdasarkan kode pesanan
+// @Description Mencari detail tiket E-Ticket berdasarkan order code (tanpa login).
+// @Tags Public - Tickets
+// @Accept json
+// @Produce json
+// @Param code query string true "Order Code (misal: SYM-XXXXXX)"
+// @Success 200 {object} models.APIResponse{data=models.OrderRecord} "Tiket ditemukan"
+// @Failure 400 {object} models.APIResponse "Parameter code wajib diisi"
+// @Failure 404 {object} models.APIResponse "Tiket tidak ditemukan"
+// @Router /tickets/lookup [get]
 func LookupTicketByCode(c *fiber.Ctx) error {
 	code := c.Query("code")
 	if code == "" {
@@ -337,7 +394,16 @@ func LookupTicketByCode(c *fiber.Ctx) error {
 	})
 }
 
-// POST /api/v1/admin/login
+// POST /api/v1/admin/login AdminLogin godoc
+// @Summary Login Administrator
+// @Description Autentikasi khusus akun administrator untuk mengakses panel manajemen admin.
+// @Tags Auth - Admin
+// @Accept json
+// @Produce json
+// @Param payload body models.AdminLoginRequest true "Admin Login Payload"
+// @Success 200 {object} models.APIResponse{data=models.AuthResponseData} "Login Admin berhasil"
+// @Failure 401 {object} models.APIResponse "Username atau Password Admin salah"
+// @Router /admin/login [post]
 func AdminLogin(c *fiber.Ctx) error {
 	var req models.AdminLoginRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -365,17 +431,40 @@ func AdminLogin(c *fiber.Ctx) error {
 		})
 	}
 
+	token, err := utils.GenerateUserToken("admin-1", adminUser+"@symphoniatic.id", "ADMIN")
+	if err != nil {
+		return utils.ResponseInternalError(c, "Gagal menerbitkan token admin", err)
+	}
+
 	return c.JSON(models.APIResponse{
 		Success: true,
 		Message: "Login Admin berhasil",
-		Data: fiber.Map{
-			"username": adminUser,
-			"token":    "admin-session-token-symphoniatic-2026",
+		Data: models.AuthResponseData{
+			Token: token,
+			User: models.UserRecord{
+				ID:         "admin-1",
+				Email:      adminUser + "@symphoniatic.id",
+				Name:       "Super Admin",
+				Role:       "ADMIN",
+				IsVerified: true,
+				CreatedAt:  time.Now(),
+				UpdatedAt:  time.Now(),
+			},
 		},
 	})
 }
 
-// POST /api/v1/admin/events (Create Event + Ticket Categories)
+// CreateEvent godoc
+// @Summary Membuat event/konser baru (Admin)
+// @Description Menambahkan event konser baru ke dalam sistem beserta kategori tiket awal.
+// @Tags Admin - Events Management
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param payload body models.CreateEventRequest true "Create Event Payload"
+// @Success 201 {object} models.APIResponse{data=models.EventItem} "Berhasil menambahkan konser baru"
+// @Failure 400 {object} models.APIResponse "Judul, Artis, Venue, Tanggal wajib diisi"
+// @Router /admin/events [post]
 func CreateEvent(c *fiber.Ctx) error {
 	var req models.CreateEventRequest
 	if err := c.BodyParser(&req); err != nil {

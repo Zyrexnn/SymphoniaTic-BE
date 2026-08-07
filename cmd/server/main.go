@@ -5,14 +5,36 @@ import (
 	"os"
 	"strings"
 
+	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/swagger"
 	"github.com/joho/godotenv"
 )
+
+// @title SymphoniaTic REST API Documentation
+// @version 1.0
+// @description Interactive OpenAPI/Swagger UI documentation for SymphoniaTic Concert Ticketing Platform.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name SymphoniaTic API Support
+// @contact.email support@symphoniatic.id
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8082
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer <your_token>" to authenticate user/admin endpoints.
+
 
 func main() {
 	err := godotenv.Load()
@@ -45,6 +67,9 @@ func main() {
 	}))
 
 	app.Static("/uploads", "./uploads")
+
+	// Swagger UI Route
+	app.Get("/swagger/*", swagger.HandlerDefault)
 
 	api := app.Group("/api/v1")
 

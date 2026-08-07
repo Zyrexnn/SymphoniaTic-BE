@@ -110,7 +110,17 @@ func ValidateAndConsumeOTP(email, purpose, otpCode string) error {
 
 // ─── 1. REGISTRASI VIA OTP ───
 
-// RequestRegisterOTP handles requesting OTP for registration
+// RequestRegisterOTP godoc
+// @Summary Meminta kode OTP untuk registrasi
+// @Description Mengirimkan 6 digit kode OTP registrasi ke email pengguna.
+// @Tags Auth - User
+// @Accept json
+// @Produce json
+// @Param payload body models.RegisterRequestOTPInput true "Register Request OTP Payload"
+// @Success 200 {object} models.APIResponse "Kode OTP registrasi berhasil dikirim"
+// @Failure 400 {object} models.APIResponse "Payload tidak valid / Email terdaftar"
+// @Failure 429 {object} models.APIResponse "Cooldown OTP (tunggu 60s)"
+// @Router /auth/register/request-otp [post]
 func RequestRegisterOTP(c *fiber.Ctx) error {
 	var req models.RegisterRequestOTPInput
 	if err := c.BodyParser(&req); err != nil {
@@ -140,7 +150,16 @@ func RequestRegisterOTP(c *fiber.Ctx) error {
 	return utils.ResponseOK(c, "Kode OTP registrasi berhasil dikirim ke email Anda. Berlaku selama 5 menit.", nil)
 }
 
-// VerifyRegisterOTP verifies OTP and creates user account
+// VerifyRegisterOTP godoc
+// @Summary Verifikasi OTP & Buat Akun Pengguna
+// @Description Memverifikasi kode OTP registrasi dan membuat akun baru beserta JWT token.
+// @Tags Auth - User
+// @Accept json
+// @Produce json
+// @Param payload body models.RegisterVerifyOTPInput true "Register Verify OTP Payload"
+// @Success 201 {object} models.APIResponse{data=models.AuthResponseData} "Registrasi akun berhasil!"
+// @Failure 400 {object} models.APIResponse "OTP tidak sesuai / expired"
+// @Router /auth/register/verify-otp [post]
 func VerifyRegisterOTP(c *fiber.Ctx) error {
 	var req models.RegisterVerifyOTPInput
 	if err := c.BodyParser(&req); err != nil {
@@ -214,7 +233,16 @@ func VerifyRegisterOTP(c *fiber.Ctx) error {
 
 // ─── 2. LOGIN (PASSWORD & OTP) ───
 
-// PasswordLogin handles traditional login via Email & Password
+// PasswordLogin godoc
+// @Summary Login dengan Email & Password
+// @Description Autentikasi user menggunakan email dan password tradisional.
+// @Tags Auth - User
+// @Accept json
+// @Produce json
+// @Param payload body models.PasswordLoginInput true "Login Payload"
+// @Success 200 {object} models.APIResponse{data=models.AuthResponseData} "Login berhasil!"
+// @Failure 401 {object} models.APIResponse "Email atau password salah"
+// @Router /auth/login/password [post]
 func PasswordLogin(c *fiber.Ctx) error {
 	var req models.PasswordLoginInput
 	if err := c.BodyParser(&req); err != nil {
