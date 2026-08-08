@@ -21,53 +21,53 @@ import (
 // @Success 200 {object} models.APIResponse{data=[]models.OrderRecord} "Berhasil mengambil riwayat pesanan"
 // @Failure 401 {object} models.APIResponse "Sesi tidak valid"
 // @Router /user/orders [get]
-func GetUserOrders(c *fiber.Ctx) error {
-	userID, _ := c.Locals("user_id").(string)
-	userEmail, _ := c.Locals("user_email").(string)
+func GetUserOrders(ctx *fiber.Ctx) error {
+	authenticatedUserID, _ := ctx.Locals("user_id").(string)
+	authenticatedUserEmail, _ := ctx.Locals("user_email").(string)
 
-	if userID == "" && userEmail == "" {
-		return utils.ResponseUnauthorized(c, "Sesi tidak valid.")
+	if authenticatedUserID == "" && authenticatedUserEmail == "" {
+		return utils.ResponseUnauthorized(ctx, "Sesi tidak valid.")
 	}
 
-	statusFilter := strings.TrimSpace(c.Query("status"))
+	orderStatusFilter := strings.TrimSpace(ctx.Query("status"))
 
-	query := `
+	baseQuery := `
 		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
 		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
 		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
 		FROM orders
 		WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2))
 	`
-	args := []interface{}{userID, userEmail}
+	queryArgs := []interface{}{authenticatedUserID, authenticatedUserEmail}
 
-	if statusFilter != "" {
-		query += " AND UPPER(status) = UPPER($3)"
-		args = append(args, statusFilter)
+	if orderStatusFilter != "" {
+		baseQuery += " AND UPPER(status) = UPPER($3)"
+		queryArgs = append(queryArgs, orderStatusFilter)
 	}
 
-	query += " ORDER BY created_at DESC"
+	baseQuery += " ORDER BY created_at DESC"
 
-	rows, err := database.DB.Query(query, args...)
+	orderRows, err := database.DB.Query(baseQuery, queryArgs...)
 	if err != nil {
-		return utils.ResponseInternalError(c, "Gagal mengambil riwayat pesanan.", err)
+		return utils.ResponseInternalError(ctx, "Gagal mengambil riwayat pesanan.", err)
 	}
-	defer rows.Close()
+	defer orderRows.Close()
 
-	orders := make([]models.OrderRecord, 0)
-	for rows.Next() {
-		var o models.OrderRecord
-		err := rows.Scan(
-			&o.ID, &o.OrderCode, &o.UserID, &o.EventID, &o.EventTitle, &o.Artist, &o.Venue, &o.Date,
-			&o.CategoryName, &o.Quantity, &o.TotalPrice, &o.UserName, &o.UserEmail, &o.QRCode, &o.Status,
-			&o.PaymentMethod, &o.CreatedAt,
+	userOrders := make([]models.OrderRecord, 0)
+	for orderRows.Next() {
+		var orderRecord models.OrderRecord
+		rowScanErr := orderRows.Scan(
+			&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
+			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.Status,
+			&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 		)
-		if err != nil {
+		if rowScanErr != nil {
 			continue
 		}
-		orders = append(orders, o)
+		userOrders = append(userOrders, orderRecord)
 	}
 
-	return utils.ResponseOK(c, "Berhasil mengambil riwayat pesanan.", orders)
+	return utils.ResponseOK(ctx, "Berhasil mengambil riwayat pesanan.", userOrders)
 }
 
 // GetUserOrderByCode godoc
@@ -81,36 +81,36 @@ func GetUserOrders(c *fiber.Ctx) error {
 // @Success 200 {object} models.APIResponse{data=models.OrderRecord} "Berhasil mengambil detail pesanan"
 // @Failure 404 {object} models.APIResponse "Pesanan tidak ditemukan"
 // @Router /user/orders/{orderCode} [get]
-func GetUserOrderByCode(c *fiber.Ctx) error {
-	userID, _ := c.Locals("user_id").(string)
-	userEmail, _ := c.Locals("user_email").(string)
-	orderCode := c.Params("orderCode")
+func GetUserOrderByCode(ctx *fiber.Ctx) error {
+	authenticatedUserID, _ := ctx.Locals("user_id").(string)
+	authenticatedUserEmail, _ := ctx.Locals("user_email").(string)
+	requestedOrderCode := ctx.Params("orderCode")
 
-	if orderCode == "" {
-		return utils.ResponseBadRequest(c, "Kode pesanan wajib diisi.")
+	if requestedOrderCode == "" {
+		return utils.ResponseBadRequest(ctx, "Kode pesanan wajib diisi.")
 	}
 
-	var o models.OrderRecord
+	var orderRecord models.OrderRecord
 	err := database.DB.QueryRow(`
 		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
 		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
 		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
 		FROM orders
 		WHERE LOWER(order_code) = LOWER($1) AND (user_id = $2 OR LOWER(user_email) = LOWER($3))
-	`, orderCode, userID, userEmail).Scan(
-		&o.ID, &o.OrderCode, &o.UserID, &o.EventID, &o.EventTitle, &o.Artist, &o.Venue, &o.Date,
-		&o.CategoryName, &o.Quantity, &o.TotalPrice, &o.UserName, &o.UserEmail, &o.QRCode, &o.Status,
-		&o.PaymentMethod, &o.CreatedAt,
+	`, requestedOrderCode, authenticatedUserID, authenticatedUserEmail).Scan(
+		&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
+		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.Status,
+		&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 	)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return utils.ResponseNotFound(c, "Pesanan tidak ditemukan atau bukan milik akun Anda.")
+			return utils.ResponseNotFound(ctx, "Pesanan tidak ditemukan atau bukan milik akun Anda.")
 		}
-		return utils.ResponseInternalError(c, "Gagal mengambil detail pesanan.", err)
+		return utils.ResponseInternalError(ctx, "Gagal mengambil detail pesanan.", err)
 	}
 
-	return utils.ResponseOK(c, "Berhasil mengambil detail pesanan.", o)
+	return utils.ResponseOK(ctx, "Berhasil mengambil detail pesanan.", orderRecord)
 }
 
 // UpdateUserProfile godoc
@@ -124,47 +124,47 @@ func GetUserOrderByCode(c *fiber.Ctx) error {
 // @Success 200 {object} models.APIResponse{data=models.UserRecord} "Profil berhasil diperbarui"
 // @Failure 400 {object} models.APIResponse "Nama wajib diisi"
 // @Router /user/profile [put]
-func UpdateUserProfile(c *fiber.Ctx) error {
-	userID, _ := c.Locals("user_id").(string)
-	if userID == "" {
-		return utils.ResponseUnauthorized(c, "Sesi tidak valid.")
+func UpdateUserProfile(ctx *fiber.Ctx) error {
+	authenticatedUserID, _ := ctx.Locals("user_id").(string)
+	if authenticatedUserID == "" {
+		return utils.ResponseUnauthorized(ctx, "Sesi tidak valid.")
 	}
 
-	var req models.UpdateProfileInput
-	if err := c.BodyParser(&req); err != nil {
-		return utils.ResponseBadRequest(c, "Format payload request tidak valid.")
+	var updateProfileReq models.UpdateProfileInput
+	if err := ctx.BodyParser(&updateProfileReq); err != nil {
+		return utils.ResponseBadRequest(ctx, "Format payload request tidak valid.")
 	}
 
-	req.Name = strings.TrimSpace(req.Name)
-	req.Phone = strings.TrimSpace(req.Phone)
+	updateProfileReq.Name = strings.TrimSpace(updateProfileReq.Name)
+	updateProfileReq.Phone = strings.TrimSpace(updateProfileReq.Phone)
 
-	if req.Name == "" {
-		return utils.ResponseBadRequest(c, "Nama lengkap tidak boleh kosong.")
+	if updateProfileReq.Name == "" {
+		return utils.ResponseBadRequest(ctx, "Nama lengkap tidak boleh kosong.")
 	}
 
-	result, err := database.DB.Exec(`
+	updateResult, err := database.DB.Exec(`
 		UPDATE users SET name = $1, phone = $2, updated_at = NOW() WHERE id = $3
-	`, req.Name, req.Phone, userID)
+	`, updateProfileReq.Name, updateProfileReq.Phone, authenticatedUserID)
 
 	if err != nil {
-		return utils.ResponseInternalError(c, "Gagal memperbarui profil pengguna.", err)
+		return utils.ResponseInternalError(ctx, "Gagal memperbarui profil pengguna.", err)
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return utils.ResponseNotFound(c, "Pengguna tidak ditemukan.")
+	affectedRows, _ := updateResult.RowsAffected()
+	if affectedRows == 0 {
+		return utils.ResponseNotFound(ctx, "Pengguna tidak ditemukan.")
 	}
 
-	var updatedUser models.UserRecord
+	var updatedUserProfile models.UserRecord
 	_ = database.DB.QueryRow(`
 		SELECT id, email, name, phone, role, is_verified, created_at, updated_at
 		FROM users WHERE id = $1
-	`, userID).Scan(
-		&updatedUser.ID, &updatedUser.Email, &updatedUser.Name, &updatedUser.Phone,
-		&updatedUser.Role, &updatedUser.IsVerified, &updatedUser.CreatedAt, &updatedUser.UpdatedAt,
+	`, authenticatedUserID).Scan(
+		&updatedUserProfile.ID, &updatedUserProfile.Email, &updatedUserProfile.Name, &updatedUserProfile.Phone,
+		&updatedUserProfile.Role, &updatedUserProfile.IsVerified, &updatedUserProfile.CreatedAt, &updatedUserProfile.UpdatedAt,
 	)
 
-	return utils.ResponseOK(c, "Profil berhasil diperbarui.", updatedUser)
+	return utils.ResponseOK(ctx, "Profil berhasil diperbarui.", updatedUserProfile)
 }
 
 // ChangeUserPassword godoc
@@ -178,46 +178,46 @@ func UpdateUserProfile(c *fiber.Ctx) error {
 // @Success 200 {object} models.APIResponse "Kata sandi akun Anda berhasil diperbarui"
 // @Failure 400 {object} models.APIResponse "Kata sandi lama salah / minimal 6 karakter"
 // @Router /user/change-password [post]
-func ChangeUserPassword(c *fiber.Ctx) error {
-	userID, _ := c.Locals("user_id").(string)
-	if userID == "" {
-		return utils.ResponseUnauthorized(c, "Sesi tidak valid.")
+func ChangeUserPassword(ctx *fiber.Ctx) error {
+	authenticatedUserID, _ := ctx.Locals("user_id").(string)
+	if authenticatedUserID == "" {
+		return utils.ResponseUnauthorized(ctx, "Sesi tidak valid.")
 	}
 
-	var req models.ChangePasswordInput
-	if err := c.BodyParser(&req); err != nil {
-		return utils.ResponseBadRequest(c, "Format payload request tidak valid.")
+	var changePasswordReq models.ChangePasswordInput
+	if err := ctx.BodyParser(&changePasswordReq); err != nil {
+		return utils.ResponseBadRequest(ctx, "Format payload request tidak valid.")
 	}
 
-	if req.OldPassword == "" || req.NewPassword == "" {
-		return utils.ResponseBadRequest(c, "Kata sandi lama dan baru wajib diisi.")
+	if changePasswordReq.OldPassword == "" || changePasswordReq.NewPassword == "" {
+		return utils.ResponseBadRequest(ctx, "Kata sandi lama dan baru wajib diisi.")
 	}
 
-	if len(req.NewPassword) < 6 {
-		return utils.ResponseBadRequest(c, "Kata sandi baru minimal 6 karakter.")
+	if len(changePasswordReq.NewPassword) < 6 {
+		return utils.ResponseBadRequest(ctx, "Kata sandi baru minimal 6 karakter.")
 	}
 
-	var currentHash string
-	err := database.DB.QueryRow("SELECT password_hash FROM users WHERE id = $1", userID).Scan(&currentHash)
+	var currentPasswordHash string
+	err := database.DB.QueryRow("SELECT password_hash FROM users WHERE id = $1", authenticatedUserID).Scan(&currentPasswordHash)
 	if err != nil {
-		return utils.ResponseNotFound(c, "Data akun tidak ditemukan.")
+		return utils.ResponseNotFound(ctx, "Data akun tidak ditemukan.")
 	}
 
-	if !utils.CheckPasswordHash(req.OldPassword, currentHash) {
-		return utils.ResponseBadRequest(c, "Kata sandi lama Anda tidak sesuai.")
+	if !utils.CheckPasswordHash(changePasswordReq.OldPassword, currentPasswordHash) {
+		return utils.ResponseBadRequest(ctx, "Kata sandi lama Anda tidak sesuai.")
 	}
 
-	newHash, err := utils.HashPassword(req.NewPassword)
+	newPasswordHash, err := utils.HashPassword(changePasswordReq.NewPassword)
 	if err != nil {
-		return utils.ResponseInternalError(c, "Gagal mengamankan kata sandi baru.", err)
+		return utils.ResponseInternalError(ctx, "Gagal mengamankan kata sandi baru.", err)
 	}
 
-	_, err = database.DB.Exec("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", newHash, userID)
+	_, err = database.DB.Exec("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2", newPasswordHash, authenticatedUserID)
 	if err != nil {
-		return utils.ResponseInternalError(c, "Gagal memperbarui kata sandi.", err)
+		return utils.ResponseInternalError(ctx, "Gagal memperbarui kata sandi.", err)
 	}
 
-	return utils.ResponseOK(c, "Kata sandi akun Anda berhasil diperbarui.", nil)
+	return utils.ResponseOK(ctx, "Kata sandi akun Anda berhasil diperbarui.", nil)
 }
 
 // GetUserDashboardSummary godoc
@@ -229,11 +229,11 @@ func ChangeUserPassword(c *fiber.Ctx) error {
 // @Produce json
 // @Success 200 {object} models.APIResponse{data=models.UserDashboardSummary} "Berhasil mengambil ringkasan statistik akun"
 // @Router /user/dashboard-summary [get]
-func GetUserDashboardSummary(c *fiber.Ctx) error {
-	userID, _ := c.Locals("user_id").(string)
-	userEmail, _ := c.Locals("user_email").(string)
+func GetUserDashboardSummary(ctx *fiber.Ctx) error {
+	authenticatedUserID, _ := ctx.Locals("user_id").(string)
+	authenticatedUserEmail, _ := ctx.Locals("user_email").(string)
 
-	var summary models.UserDashboardSummary
+	var dashboardSummary models.UserDashboardSummary
 
 	err := database.DB.QueryRow(`
 		WITH user_orders AS (
@@ -252,17 +252,17 @@ func GetUserDashboardSummary(c *fiber.Ctx) error {
 			COALESCE(COUNT(CASE WHEN UPPER(status) = 'CHECKED_IN' THEN 1 END), 0),
 			COALESCE((SELECT COUNT(*) FROM user_refunds WHERE UPPER(status) = 'PENDING'), 0)
 		FROM user_orders
-	`, userID, userEmail).Scan(
-		&summary.TotalTicketsBought,
-		&summary.UpcomingEventsCount,
-		&summary.PastEventsCount,
-		&summary.ActiveRefundsCount,
+	`, authenticatedUserID, authenticatedUserEmail).Scan(
+		&dashboardSummary.TotalTicketsBought,
+		&dashboardSummary.UpcomingEventsCount,
+		&dashboardSummary.PastEventsCount,
+		&dashboardSummary.ActiveRefundsCount,
 	)
 	if err != nil && err != sql.ErrNoRows {
-		return utils.ResponseInternalError(c, "Gagal mengambil ringkasan statistik akun.", err)
+		return utils.ResponseInternalError(ctx, "Gagal mengambil ringkasan statistik akun.", err)
 	}
 
-	return utils.ResponseOK(c, "Berhasil mengambil ringkasan statistik akun.", summary)
+	return utils.ResponseOK(ctx, "Berhasil mengambil ringkasan statistik akun.", dashboardSummary)
 }
 
 // GetUserRefunds godoc
@@ -274,13 +274,13 @@ func GetUserDashboardSummary(c *fiber.Ctx) error {
 // @Produce json
 // @Success 200 {object} models.APIResponse{data=[]models.RefundRequestRecord} "Berhasil mengambil data pengajuan refund"
 // @Router /user/refunds [get]
-func GetUserRefunds(c *fiber.Ctx) error {
-	userEmail, _ := c.Locals("user_email").(string)
-	if userEmail == "" {
-		return utils.ResponseUnauthorized(c, "Sesi tidak valid.")
+func GetUserRefunds(ctx *fiber.Ctx) error {
+	authenticatedUserEmail, _ := ctx.Locals("user_email").(string)
+	if authenticatedUserEmail == "" {
+		return utils.ResponseUnauthorized(ctx, "Sesi tidak valid.")
 	}
 
-	rows, err := database.DB.Query(`
+	refundRows, err := database.DB.Query(`
 		SELECT r.id, r.order_id, r.order_code, r.user_email, r.bank_name, r.account_number, 
 		       r.account_holder, COALESCE(r.reason, ''), r.refund_amount, r.status, 
 		       COALESCE(r.admin_note, ''), r.created_at, r.updated_at,
@@ -290,26 +290,26 @@ func GetUserRefunds(c *fiber.Ctx) error {
 		LEFT JOIN orders o ON r.order_id = o.id
 		WHERE LOWER(r.user_email) = LOWER($1)
 		ORDER BY r.created_at DESC
-	`, userEmail)
+	`, authenticatedUserEmail)
 
 	if err != nil {
-		return utils.ResponseInternalError(c, "Gagal mengambil data pengajuan refund.", err)
+		return utils.ResponseInternalError(ctx, "Gagal mengambil data pengajuan refund.", err)
 	}
-	defer rows.Close()
+	defer refundRows.Close()
 
-	refunds := make([]models.RefundRequestRecord, 0)
-	for rows.Next() {
-		var r models.RefundRequestRecord
-		err := rows.Scan(
-			&r.ID, &r.OrderID, &r.OrderCode, &r.UserEmail, &r.BankName, &r.AccountNumber,
-			&r.AccountHolder, &r.Reason, &r.RefundAmount, &r.Status, &r.AdminNote,
-			&r.CreatedAt, &r.UpdatedAt, &r.EventTitle, &r.CategoryName, &r.Quantity, &r.UserName,
+	refundList := make([]models.RefundRequestRecord, 0)
+	for refundRows.Next() {
+		var refundRecord models.RefundRequestRecord
+		rowScanErr := refundRows.Scan(
+			&refundRecord.ID, &refundRecord.OrderID, &refundRecord.OrderCode, &refundRecord.UserEmail, &refundRecord.BankName, &refundRecord.AccountNumber,
+			&refundRecord.AccountHolder, &refundRecord.Reason, &refundRecord.RefundAmount, &refundRecord.Status, &refundRecord.AdminNote,
+			&refundRecord.CreatedAt, &refundRecord.UpdatedAt, &refundRecord.EventTitle, &refundRecord.CategoryName, &refundRecord.Quantity, &refundRecord.UserName,
 		)
-		if err != nil {
+		if rowScanErr != nil {
 			continue
 		}
-		refunds = append(refunds, r)
+		refundList = append(refundList, refundRecord)
 	}
 
-	return utils.ResponseOK(c, "Berhasil mengambil data pengajuan refund.", refunds)
+	return utils.ResponseOK(ctx, "Berhasil mengambil data pengajuan refund.", refundList)
 }
