@@ -104,8 +104,8 @@ func SendETicketEmail(order models.OrderRecord) {
 
             <div style="text-align: center;">
                 <div class="qr-section">
-                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=%s" alt="QR Code E-Ticket" />
-                    <div style="color: #000; font-size: 11px; margin-top: 5px; font-weight: bold;">Tunjukkan QR ini saat masuk venue</div>
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=%s" alt="QR Code E-Ticket" />
+                    <div style="color: #000; font-size: 11px; margin-top: 5px; font-weight: bold;">Pindai QR ini pada scanner gate masuk</div>
                 </div>
             </div>
 
@@ -130,7 +130,7 @@ func SendETicketEmail(order models.OrderRecord) {
 			order.CategoryName,
 			order.Quantity,
 			order.TotalPrice,
-			order.QRCode,
+			order.OrderCode,
 		)
 
 		headers := make(map[string]string)

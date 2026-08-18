@@ -435,28 +435,50 @@ func AdminLogin(ctx *fiber.Ctx) error {
 		adminPass = "123"
 	}
 
-	if adminLoginReq.Username != adminUser || adminLoginReq.Password != adminPass {
+	petugasUser := os.Getenv("PETUGAS_USERNAME")
+	if petugasUser == "" {
+		petugasUser = "petugas"
+	}
+
+	petugasPass := os.Getenv("PETUGAS_PASSWORD")
+	if petugasPass == "" {
+		petugasPass = "123"
+	}
+
+	var authenticatedRole string
+	var authenticatedName string
+	var authenticatedID string
+
+	if adminLoginReq.Username == adminUser && adminLoginReq.Password == adminPass {
+		authenticatedRole = "ADMIN"
+		authenticatedName = "Super Administrator"
+		authenticatedID = "admin-1"
+	} else if adminLoginReq.Username == petugasUser && adminLoginReq.Password == petugasPass {
+		authenticatedRole = "PETUGAS"
+		authenticatedName = "Petugas Gate Officer"
+		authenticatedID = "petugas-1"
+	} else {
 		return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
 			Success: false,
-			Message: "Username atau Password Admin salah",
+			Message: "Username atau Password salah",
 		})
 	}
 
-	adminJwtToken, err := utils.GenerateUserToken("admin-1", adminUser+"@symphoniatic.id", "ADMIN")
+	adminJwtToken, err := utils.GenerateUserToken(authenticatedID, adminLoginReq.Username+"@symphoniatic.id", authenticatedRole)
 	if err != nil {
-		return utils.ResponseInternalError(ctx, "Gagal menerbitkan token admin", err)
+		return utils.ResponseInternalError(ctx, "Gagal menerbitkan token sesi", err)
 	}
 
 	return ctx.JSON(models.APIResponse{
 		Success: true,
-		Message: "Login Admin berhasil",
+		Message: fmt.Sprintf("Login %s berhasil", authenticatedRole),
 		Data: models.AuthResponseData{
 			Token: adminJwtToken,
 			User: models.UserRecord{
-				ID:         "admin-1",
-				Email:      adminUser + "@symphoniatic.id",
-				Name:       "Super Admin",
-				Role:       "ADMIN",
+				ID:         authenticatedID,
+				Email:      adminLoginReq.Username + "@symphoniatic.id",
+				Name:       authenticatedName,
+				Role:       authenticatedRole,
 				IsVerified: true,
 				CreatedAt:  time.Now(),
 				UpdatedAt:  time.Now(),
