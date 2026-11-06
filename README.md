@@ -1,160 +1,169 @@
-# 🎼 SymphoniaTic Backend REST API
+# SymphoniaTic Backend REST API
 
-Dokumentasi resmi **SymphoniaTic Backend REST API** yang komprehensif untuk seluruh tim (**Front-End**, **Back-End**, **QA**, & **DevOps**). Dokumentasi ini mencakup seluruh daftar endpoint (Public, User Auth, User Account, Order & Ticket Lookup, Refund Publik, serta Admin Panel Management), format request/response JSON lengkap, alur Autentikasi OTP & Password, sistem transaksi Checkout, hingga pengelolaan Admin Dashboard & Mailpit.
+Official REST API documentation for the SymphoniaTic classical concert ticketing platform. Covers all public, user authentication, customer account, checkout, public refund, and admin management endpoints, including JSON schemas, OTP security rules, transactional row-locking mechanisms, and local Mailpit email inspection.
 
 ---
 
-## ⚡ Ringkasan Server & Setup Lokal
+## Server Summary & Local Setup
 
-| Environment | URL / Alamat | Keterangan |
+| Environment | URL / Address | Notes |
 | :--- | :--- | :--- |
-| **API Base URL** | `http://localhost:8082/api/v1` | Prefix utama seluruh endpoint API |
-| **Server Engine** | Go (Golang) + Fiber v2 | High-performance Web Framework |
-| **Database** | PostgreSQL | Port default: `5432` |
-| **Mailpit Dashboard** | `http://localhost:8025` | Interface browser untuk melihat OTP, E-Ticket, & Notifikasi Email |
-| **Mailpit SMTP** | `localhost:1025` | Port SMTP lokal untuk pengujian email |
-| **Auth Header (User)** | `Authorization: Bearer <user_jwt_token>` | Header wajib untuk endpoint akun & profil user |
-| **Auth Header (Admin)** | `Authorization: Bearer <admin_token>` | Token sesi admin untuk panel manajemen |
+| **API Base URL** | `http://localhost:8082/api/v1` | Primary prefix for all REST endpoints |
+| **Server Engine** | Go + Fiber v2 | Native web framework |
+| **Database** | PostgreSQL 16 | Default port: `5432` |
+| **Mailpit Dashboard** | `http://localhost:8025` | Webmail UI to inspect OTP, e-tickets, and notifications |
+| **Mailpit SMTP** | `localhost:1025` | Local SMTP port for automated transactional email delivery |
+| **Auth Header (User)** | `Authorization: Bearer <user_jwt_token>` | Required header for customer account and profile routes |
+| **Auth Header (Admin)** | `Authorization: Bearer <admin_token>` | Admin session token for management routes |
 
 ---
 
-## 🚀 Panduan Memulai Backend & Mailpit
+## Getting Started with Backend & Mailpit
 
-### 1. Prasyarat Environment Variables (`.env`)
-Buat file `.env` di dalam folder `be/` dengan konfigurasi berikut:
+### 1. Environment Variables Configuration (`.env`)
+Create a `.env` file in the `be/` folder with the following configuration:
 ```env
 PORT=8082
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=symphoniatic
-JWT_SECRET=super_secret_jwt_key_symphoniatic_2026
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=123
+DB_USER=symphoniatic
+DB_PASSWORD=symphoniatic_secret
+DB_NAME=symphoniatic_db
+DB_SSLMODE=disable
+CORS_ORIGIN=http://localhost:4321,http://localhost:3000
+API_BASE_URL=http://localhost:8082
+JWT_SECRET=symphoniatic-super-secret-jwt-key-2026
+
+# Mailpit SMTP Configuration
 SMTP_HOST=localhost
 SMTP_PORT=1025
-API_BASE_URL=http://localhost:8082/api/v1
+SMTP_SENDER_EMAIL=noreply@symphoniatic.com
+SMTP_SENDER_NAME=SymphoniaTic E-Ticket System
+
+# Admin and Gate Officer Credentials
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=123
+PETUGAS_USERNAME=petugas
+PETUGAS_PASSWORD=123
 ```
 
-### 2. Jalankan PostgreSQL & Mailpit via Docker
+### 2. Run PostgreSQL & Mailpit via Docker
 ```bash
-# Jalankan PostgreSQL Database
-docker run -d --name symphoniatic-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=symphoniatic postgres:alpine
-
-# Jalankan Mailpit Service (Email Testing Tool)
-docker run -d --name mailpit -p 8025:8025 -p 1025:1025 axllent/mailpit
+# Start background database and mailpit services from repo root
+docker compose up -d db mailpit
 ```
 
-### 3. Migrasi & Seed Database SQL
-Eksekusi file script `setup.sql` ke dalam PostgreSQL untuk membuat skema tabel dan data awal (event konser & kategori tiket):
+### 3. Database Schema and Seed Data
+The database schema and initial concert catalog are initialized automatically on boot by `database.initSchema()`. For manual execution or raw database inspection:
 ```bash
-psql -h localhost -U postgres -d symphoniatic -f setup.sql
+psql -h localhost -U symphoniatic -d symphoniatic_db -f setup.sql
 ```
 
-### 4. Jalankan Server Go Backend
+### 4. Run Go Backend Server
 ```bash
 cd be
 go run ./cmd/server
 ```
-*Server API aktif di `http://localhost:8082`.*
+API server is active at `http://localhost:8082`. Swagger docs are available at `http://localhost:8082/swagger/index.html`.
 
 ---
 
-## 📋 Standard API Response Envelope
+## Standard API Response Envelope
 
-Seluruh endpoint pada SymphoniaTic REST API mengembalikan format JSON yang konsisten menggunakan envelope `APIResponse`:
+All endpoints in the SymphoniaTic REST API return consistent JSON structures using the `APIResponse` envelope:
 
-### Request Berhasil (200 OK / 201 Created)
+### Successful Request (200 OK / 201 Created)
 ```json
 {
   "success": true,
-  "message": "Pesan deskripsi aksi yang berhasil dilakukan.",
+  "message": "User-friendly status message in Bahasa Indonesia",
   "data": { ... }
 }
 ```
 
-### Request Gagal / Error (400 / 401 / 404 / 429 / 500)
+### Failed Request (400 / 401 / 403 / 404 / 429 / 500)
 ```json
 {
   "success": false,
-  "message": "Pesan kesalahan yang mudah dipahami.",
-  "error": "Detail error teknis (opsional/internal debug)"
+  "message": "User-friendly error message in Bahasa Indonesia",
+  "error": "Internal technical detail (optional / debug only)"
 }
 ```
 
 ---
 
-## 🗺️ Ringkasan Tabel Endpoint (Quick Reference)
+## Endpoint Quick Reference Table
 
-### 📢 1. Event & Konser (Public)
+### 1. Events & Concerts (Public)
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/events` | Ambil semua daftar event konser, kategori tiket, & rundown | Public |
-| `GET` | `/api/v1/events/:id` | Ambil detail 1 event konser berdasarkan ID | Public |
+| `GET` | `/api/v1/events` | List all concert events with categories and rundowns | Public |
+| `GET` | `/api/v1/events/:id` | Retrieve single concert event by ID | Public |
 
-### 🔑 2. Autentikasi Pengguna (`/api/v1/auth`)
+### 2. User Authentication (`/api/v1/auth`)
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/register/request-otp` | Request OTP untuk registrasi akun baru | Public |
-| `POST` | `/api/v1/auth/register/verify-otp` | Verifikasi OTP registrasi & setel kata sandi | Public |
-| `POST` | `/api/v1/auth/login/password` | Login menggunakan Email & Password | Public |
-| `POST` | `/api/v1/auth/login/request-otp` | Request OTP untuk login tanpa password | Public |
-| `POST` | `/api/v1/auth/login/verify-otp` | Verifikasi OTP login & dapatkan JWT Token | Public |
-| `POST` | `/api/v1/auth/forgot-password/request-otp` | Request OTP reset kata sandi | Public |
-| `POST` | `/api/v1/auth/forgot-password/verify-otp` | Verifikasi OTP reset kata sandi (Mendapatkan Reset Token) | Public |
-| `POST` | `/api/v1/auth/forgot-password/reset` | Setel ulang kata sandi baru via Reset Token | Public |
-| `GET` | `/api/v1/auth/me` | Ambil profil pengguna yang sedang login | `Bearer Token` |
+| `POST` | `/api/v1/auth/register/request-otp` | Request OTP for new account registration | Public |
+| `POST` | `/api/v1/auth/register/verify-otp` | Verify registration OTP and set account password | Public |
+| `POST` | `/api/v1/auth/login/password` | Login using email and password | Public |
+| `POST` | `/api/v1/auth/login/request-otp` | Request OTP for passwordless login | Public |
+| `POST` | `/api/v1/auth/login/verify-otp` | Verify login OTP and receive JWT token | Public |
+| `POST` | `/api/v1/auth/forgot-password/request-otp` | Request password reset OTP | Public |
+| `POST` | `/api/v1/auth/forgot-password/verify-otp` | Verify reset OTP and receive reset token | Public |
+| `POST` | `/api/v1/auth/forgot-password/reset` | Set new password using reset token | Public |
+| `GET` | `/api/v1/auth/me` | Fetch authenticated user profile | Bearer Token |
 
-### 👤 3. Manajemen Akun & Profil (`/api/v1/user`)
+### 3. User Account Management (`/api/v1/user`)
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `PUT` | `/api/v1/user/profile` | Update Nama Lengkap & Nomor HP pengguna | `Bearer Token` |
-| `POST` | `/api/v1/user/change-password` | Ubah kata sandi dari dalam akun pengguna | `Bearer Token` |
-| `GET` | `/api/v1/user/dashboard-summary` | Ambil ringkasan statistik tiket, konser, & refund user | `Bearer Token` |
-| `GET` | `/api/v1/user/orders` | Ambil seluruh riwayat pesanan tiket milik pengguna (Filter: `?status=`) | `Bearer Token` |
-| `GET` | `/api/v1/user/orders/:orderCode` | Ambil detail 1 pesanan tiket milik pengguna | `Bearer Token` |
-| `GET` | `/api/v1/user/refunds` | Monitoring riwayat & status pengajuan refund pengguna | `Bearer Token` |
+| `PUT` | `/api/v1/user/profile` | Update user name and phone number | Bearer Token |
+| `POST` | `/api/v1/user/change-password` | Change password from inside active session | Bearer Token |
+| `GET` | `/api/v1/user/dashboard-summary` | Summary metrics: tickets, events, refunds | Bearer Token |
+| `GET` | `/api/v1/user/orders` | Order history for authenticated user (filter: `?status=`) | Bearer Token |
+| `GET` | `/api/v1/user/orders/:orderCode` | Detail of a specific user order | Bearer Token |
+| `GET` | `/api/v1/user/refunds` | Refund history and status tracking | Bearer Token |
 
-### 🎟️ 4. Pemesanan Tiket & Lookup (`/api/v1/orders`, `/api/v1/tickets`)
+### 4. Ticket Orders & Lookup (`/api/v1/orders`, `/api/v1/tickets`)
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/orders` | Transaksi pemesanan tiket (Autofill User jika ada Token, Guest jika tidak) | Public / User |
-| `GET` | `/api/v1/tickets/lookup` | Public lookup tiket berdasarkan kode order (`?code=SYM-xxx`) | Public |
+| `POST` | `/api/v1/orders` | Ticket checkout with row locking (autofills if authenticated) | Public / User |
+| `GET` | `/api/v1/tickets/lookup` | Public lookup by order code (`?code=SYM-xxx`) | Public |
 
-### 🔄 5. Pengajuan Refund Publik (`/api/v1/refunds`)
+### 5. Public Refunds (`/api/v1/refunds`)
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/refunds/request-otp` | Request OTP verifikasi permohonan refund | Public |
-| `POST` | `/api/v1/refunds/submit` | Kirim pengajuan refund (OTP + Rekening Bank) | Public |
-| `POST` | `/api/v1/refunds/status` | Cek status permohonan refund via Kode Order & Email | Public |
+| `POST` | `/api/v1/refunds/request-otp` | Request OTP to verify refund application | Public |
+| `POST` | `/api/v1/refunds/submit` | Submit refund form (OTP + bank account) | Public |
+| `POST` | `/api/v1/refunds/status` | Check refund status by order code and email | Public |
 
-### 🛠️ 6. Admin Panel Management (`/api/v1/admin`)
+### 6. Admin Panel Management (`/api/v1/admin`)
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/admin/login` | Login Admin Panel | Public |
-| `GET` | `/api/v1/admin/dashboard` | Metric analytics real-time (Revenue, Tickets, Charts) | Admin |
-| `POST` | `/api/v1/admin/upload` | Upload gambar poster event (Multipart Form Data) | Admin |
-| `POST` | `/api/v1/admin/events` | Buat event konser baru beserta kategori tiket | Admin |
-| `PUT` | `/api/v1/admin/events/:id` | Update detail event konser | Admin |
-| `PATCH` | `/api/v1/admin/events/:id/toggle-close` | Tutup / Buka kembali penjualan tiket konser | Admin |
-| `DELETE` | `/api/v1/admin/events/:id` | Hapus event konser beserta seluruh kategori terkait | Admin |
-| `POST` | `/api/v1/admin/events/:id/categories` | Tambah kategori tiket baru ke event tertentu | Admin |
-| `PUT` | `/api/v1/admin/categories/:id` | Update kategori tiket (Harga, Nama, & Penyesuaian Kuota) | Admin |
-| `DELETE` | `/api/v1/admin/categories/:id` | Hapus kategori tiket | Admin |
-| `GET` | `/api/v1/admin/orders` | Daftar semua transaksi (Filter: `?search=` & `?status=`) | Admin |
-| `PATCH` | `/api/v1/admin/orders/:id/status` | Update status transaksi (`CHECKED_IN`, `REMINDED`, dll) | Admin |
-| `GET` | `/api/v1/admin/refunds` | Daftar seluruh pengajuan refund dari pembeli | Admin |
-| `PATCH` | `/api/v1/admin/refunds/:id/status` | Setujui (`APPROVED`) / Tolak (`REJECTED`) refund + Auto-Restock Kuota | Admin |
+| `POST` | `/api/v1/admin/login` | Admin panel login | Public |
+| `GET` | `/api/v1/admin/dashboard` | Real-time analytics (revenue, tickets, breakdown) | Admin |
+| `POST` | `/api/v1/admin/upload` | Upload event poster image (multipart form data) | Admin |
+| `POST` | `/api/v1/admin/events` | Create new concert event and ticket categories | Admin |
+| `PUT` | `/api/v1/admin/events/:id` | Update concert event details | Admin |
+| `PATCH` | `/api/v1/admin/events/:id/toggle-close` | Open or close concert ticket sales | Admin |
+| `DELETE` | `/api/v1/admin/events/:id` | Delete concert event and categories | Admin |
+| `POST` | `/api/v1/admin/events/:id/categories` | Add ticket category to event | Admin |
+| `PUT` | `/api/v1/admin/categories/:id` | Update ticket category (price, name, quota) | Admin |
+| `DELETE` | `/api/v1/admin/categories/:id` | Delete ticket category | Admin |
+| `GET` | `/api/v1/admin/orders` | List all transactions (`?search=` and `?status=`) | Admin |
+| `PATCH` | `/api/v1/admin/orders/:id/status` | Update transaction status (`CHECKED_IN`, `REMINDED`, etc.) | Admin |
+| `GET` | `/api/v1/admin/refunds` | List all refund submissions | Admin |
+| `PATCH` | `/api/v1/admin/refunds/:id/status` | Approve or reject refund with auto quota restock | Admin |
 
 ---
 
-## 📢 Modul 1: Event & Konser (Public)
+## Detailed Module Documentation
 
-### 1. Ambil Daftar Semua Event Konser
-- **URL**: `GET /api/v1/events`
-- **Auth Required**: Tidak
-- **Response Success (200 OK)**:
+### Module 1: Events and Concerts (Public)
+
+#### 1. List All Concert Events
+- **Method / URL**: `GET /api/v1/events`
+- **Auth**: None
+- **Response (200 OK)**:
 ```json
 {
   "success": true,
@@ -163,7 +172,7 @@ Seluruh endpoint pada SymphoniaTic REST API mengembalikan format JSON yang konsi
     {
       "id": "evt-1",
       "title": "Symphony No. 5 in C minor",
-      "subtitle": "Opus 67 — I. Allegro con brio Masterpiece",
+      "subtitle": "Opus 67: I. Allegro con brio Masterpiece",
       "artist": "Royal Philharmonic Orchestra & Jakarta Choral Society",
       "conductor": "Maestro Alexander Vance",
       "venue": "Aula Simfonia Jakarta",
@@ -176,11 +185,11 @@ Seluruh endpoint pada SymphoniaTic REST API mengembalikan format JSON yang konsi
       "image": "https://images.unsplash.com/photo-1465847899084-d164df4dedc6",
       "audioUrl": "/audio/Ludwig van Beethoven - Symphony n.5.mp3",
       "organizer": "Royal Philharmonic Foundation & SymphoniaTic Events",
-      "description": "Mahakarya simfoni Ludwig van Beethoven...",
+      "description": "Ludwig van Beethoven orchestral masterpiece...",
       "isClosed": false,
       "rundown": [
-        { "time": "18:00 WIB", "activity": "Pemeriksaan E-Ticket & Registrasi Open Gate" },
-        { "time": "19:30 WIB", "activity": "Pertunjukan Utama dimulai" }
+        { "time": "18:00 WIB", "activity": "Open Gate & Ticket Registration" },
+        { "time": "19:30 WIB", "activity": "Main Performance Commences" }
       ],
       "categories": [
         {
@@ -198,11 +207,11 @@ Seluruh endpoint pada SymphoniaTic REST API mengembalikan format JSON yang konsi
 }
 ```
 
-### 2. Detail 1 Event Konser
-- **URL**: `GET /api/v1/events/:id` (Contoh: `/api/v1/events/evt-1`)
-- **Auth Required**: Tidak
-- **Response Success (200 OK)**: Mengembalikan objek tunggal `EventItem`.
-- **Response Error (404 Not Found)**:
+#### 2. Get Concert Event Details
+- **Method / URL**: `GET /api/v1/events/:id` (e.g. `/api/v1/events/evt-1`)
+- **Auth**: None
+- **Response (200 OK)**: Returns single `EventItem` object.
+- **Response (404 Not Found)**:
 ```json
 {
   "success": false,
@@ -212,131 +221,106 @@ Seluruh endpoint pada SymphoniaTic REST API mengembalikan format JSON yang konsi
 
 ---
 
-## 🔑 Modul 2: Autentikasi Pengguna (`/api/v1/auth`)
+### Module 2: User Authentication (`/api/v1/auth`)
 
-### 1. Request OTP Registrasi
-- **URL**: `POST /api/v1/auth/register/request-otp`
-- **Request Body**:
+#### 1. Request Registration OTP
+- **Method / URL**: `POST /api/v1/auth/register/request-otp`
+- **Body**:
 ```json
 {
-  "email": "budi@example.com",
-  "name": "Budi Santoso"
+  "email": "user@example.com",
+  "name": "John Doe"
 }
 ```
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "Kode OTP registrasi berhasil dikirim ke email Anda. Berlaku selama 5 menit.",
-  "data": null
-}
-```
+- **Response (200 OK)**: OTP sent to user email (expires in 5 minutes).
 
-### 2. Verifikasi OTP Registrasi & Buat Akun
-- **URL**: `POST /api/v1/auth/register/verify-otp`
-- **Request Body**:
+#### 2. Verify Registration OTP and Create Account
+- **Method / URL**: `POST /api/v1/auth/register/verify-otp`
+- **Body**:
 ```json
 {
-  "email": "budi@example.com",
-  "name": "Budi Santoso",
+  "email": "user@example.com",
+  "name": "John Doe",
   "otpCode": "123456",
-  "password": "Password123!"
+  "password": "SecurePassword123!"
 }
 ```
-- **Response Success (201 Created)**:
+- **Response (201 Created)**: Returns JWT auth `token` and `user` profile object.
+
+#### 3. Password Login
+- **Method / URL**: `POST /api/v1/auth/login/password`
+- **Body**:
 ```json
 {
-  "success": true,
-  "message": "Registrasi akun berhasil!",
-  "data": {
-    "token": "eyJhbGciOiJIUzI1Ni...",
-    "user": {
-      "id": "usr-uuid-1234",
-      "email": "budi@example.com",
-      "name": "Budi Santoso",
-      "role": "USER",
-      "isVerified": true,
-      "createdAt": "2026-08-04T07:10:00Z",
-      "updatedAt": "2026-08-04T07:10:00Z"
-    }
-  }
+  "email": "user@example.com",
+  "password": "SecurePassword123!"
 }
 ```
+- **Response (200 OK)**: Returns JWT auth `token` and `user` profile object.
 
-### 3. Login Menggunakan Password
-- **URL**: `POST /api/v1/auth/login/password`
-- **Request Body**:
-```json
-{
-  "email": "budi@example.com",
-  "password": "Password123!"
-}
-```
-- **Response Success (200 OK)**: Mengembalikan `token` JWT dan objek `user`.
+#### 4. Passwordless Login via OTP
+1. **Request Login OTP**: `POST /api/v1/auth/login/request-otp`
+   ```json
+   { "email": "user@example.com" }
+   ```
+2. **Verify Login OTP**: `POST /api/v1/auth/login/verify-otp`
+   ```json
+   { "email": "user@example.com", "otpCode": "654321" }
+   ```
+   *Response (200 OK)*: Returns JWT `token` and `user` profile object.
 
-### 4. Login Menggunakan OTP (Tanpa Password)
-1. **Request OTP Login**: `POST /api/v1/auth/login/request-otp`
+#### 5. Password Reset Workflow
+1. **Request Reset OTP**: `POST /api/v1/auth/forgot-password/request-otp`
    ```json
-   { "email": "budi@example.com" }
+   { "email": "user@example.com" }
    ```
-2. **Verifikasi OTP Login**: `POST /api/v1/auth/login/verify-otp`
+2. **Verify Reset OTP**: `POST /api/v1/auth/forgot-password/verify-otp`
    ```json
-   { "email": "budi@example.com", "otpCode": "654321" }
+   { "email": "user@example.com", "otpCode": "112233" }
    ```
-   *Response Success (200 OK)*: Mengembalikan `token` JWT dan objek `user`.
-
-### 5. Forgot Password (Reset Kata Sandi)
-1. **Request OTP Reset**: `POST /api/v1/auth/forgot-password/request-otp`
-   ```json
-   { "email": "budi@example.com" }
-   ```
-2. **Verifikasi OTP Reset**: `POST /api/v1/auth/forgot-password/verify-otp`
-   ```json
-   { "email": "budi@example.com", "otpCode": "112233" }
-   ```
-   *Response Success (200 OK)*: Mengembalikan `resetToken`.
-3. **Eksekusi Reset Kata Sandi Baru**: `POST /api/v1/auth/forgot-password/reset`
+   *Response (200 OK)*: Returns `resetToken`.
+3. **Set New Password**: `POST /api/v1/auth/forgot-password/reset`
    ```json
    {
-     "resetToken": "eyJhbGciOiJIUzI1...",
-     "newPassword": "PasswordBaruAman123!"
+     "resetToken": "eyJhbGciOiJIUzI1Ni...",
+     "newPassword": "NewSecurePassword123!"
    }
    ```
 
-### 6. Ambil Profil Saya
-- **URL**: `GET /api/v1/auth/me`
-- **Auth Required**: Ya (`Authorization: Bearer <token>`)
-- **Response Success (200 OK)**: Mengembalikan objek `UserRecord`.
+#### 6. Get Current User Profile
+- **Method / URL**: `GET /api/v1/auth/me`
+- **Header**: `Authorization: Bearer <token>`
+- **Response (200 OK)**: Returns authenticated `UserRecord`.
 
 ---
 
-## 👤 Modul 3: Manajemen Akun & Profil (`/api/v1/user`)
+### Module 3: Customer Account Management (`/api/v1/user`)
 
-Semua endpoint pada modul ini membutuhkan **Header**: `Authorization: Bearer <token>`
+All routes in this module require: `Authorization: Bearer <token>`
 
-### 1. Update Profil (Nama & Nomor HP)
-- **URL**: `PUT /api/v1/user/profile`
-- **Request Body**:
+#### 1. Update Profile
+- **Method / URL**: `PUT /api/v1/user/profile`
+- **Body**:
 ```json
 {
-  "name": "Budi Santoso Terbaru",
+  "name": "John Doe Updated",
   "phone": "081234567890"
 }
 ```
 
-### 2. Ubah Kata Sandi Dari Akun
-- **URL**: `POST /api/v1/user/change-password`
-- **Request Body**:
+#### 2. Change Password
+- **Method / URL**: `POST /api/v1/user/change-password`
+- **Body**:
 ```json
 {
-  "oldPassword": "Password123!",
-  "newPassword": "PasswordBaruUltraAman123!"
+  "oldPassword": "CurrentPassword123!",
+  "newPassword": "NewStrongPassword123!"
 }
 ```
 
-### 3. Ringkasan Dashboard User
-- **URL**: `GET /api/v1/user/dashboard-summary`
-- **Response Success (200 OK)**:
+#### 3. User Dashboard Summary
+- **Method / URL**: `GET /api/v1/user/dashboard-summary`
+- **Response (200 OK)**:
 ```json
 {
   "success": true,
@@ -350,31 +334,27 @@ Semua endpoint pada modul ini membutuhkan **Header**: `Authorization: Bearer <to
 }
 ```
 
-### 4. Riwayat Pesanan Tiket Saya
-- **URL**: `GET /api/v1/user/orders`
-- **Query Parameter Opsional**: `?status=ISSUED` atau `?status=CHECKED_IN` atau `?status=REFUNDED`
-- **Response Success (200 OK)**: Mengembalikan array berisi seluruh daftar pesanan milik pengguna terautentikasi.
+#### 4. User Order History
+- **Method / URL**: `GET /api/v1/user/orders`
+- **Query Filters**: `?status=ISSUED`, `?status=CHECKED_IN`, or `?status=REFUNDED`
 
-### 5. Detail 1 Pesanan Saya
-- **URL**: `GET /api/v1/user/orders/:orderCode` (Contoh: `/api/v1/user/orders/SYM-987654`)
-- **Response Success (200 OK)**: Mengembalikan detail `OrderRecord` lengkap dengan data venue & QR Code.
+#### 5. User Specific Order
+- **Method / URL**: `GET /api/v1/user/orders/:orderCode` (e.g. `/api/v1/user/orders/SYM-849201`)
 
-### 6. Monitoring Refund Saya
-- **URL**: `GET /api/v1/user/refunds`
-- **Response Success (200 OK)**: Mengembalikan daftar seluruh permohonan refund milik pengguna beserta status (`PENDING`, `APPROVED`, `REJECTED`), catatan admin, dan nominal pengembalian.
+#### 6. User Refunds List
+- **Method / URL**: `GET /api/v1/user/refunds`
 
 ---
 
-## 🎟️ Modul 4: Pemesanan Tiket & Lookup (`/api/v1/orders`, `/api/v1/tickets`)
+### Module 4: Ticket Orders and Verification
 
-### 1. Checkout Tiket Konser (`POST /api/v1/orders`)
-Endpoint ini menangani pemesanan tiket dengan fitur **Atomic Quota Deduction** dan **Row-Locking DB (`FOR UPDATE`)** untuk mencegah overbooking saat *ticket war*.
+#### 1. Checkout Ticket Order (`POST /api/v1/orders`)
+Handles ticket reservation with atomic row locking (`SELECT ... FOR UPDATE`) to prevent overselling during high concurrency.
 
-- **Fitur Otomatis Logged-In User**:
-  - Apabila menyertakan Header `Authorization: Bearer <token>`, FE **TIDAK PERLU** mengirimkan `userName` dan `userEmail`. Sistem otomatis mengambil data akun user dan mengaitkan `userId` pada pesanan.
-  - Untuk **Guest Checkout (Tanpa Token)**: Sertakan `userName` & `userEmail` secara manual.
+- **Authenticated Checkout**: When `Authorization: Bearer <token>` is present, `userName` and `userEmail` are inferred automatically.
+- **Guest Checkout**: Supply `userName` and `userEmail` explicitly.
 
-- **Request Body (Logged-In User)**:
+- **Request Body (Authenticated)**:
 ```json
 {
   "eventId": "evt-1",
@@ -383,23 +363,18 @@ Endpoint ini menangani pemesanan tiket dengan fitur **Atomic Quota Deduction** d
 }
 ```
 
-- **Request Body (Guest Checkout)**:
+- **Request Body (Guest)**:
 ```json
 {
   "eventId": "evt-1",
   "ticketCategoryId": "c1-vip",
   "quantity": 2,
-  "userName": "Agus Wijaya",
-  "userEmail": "agus@example.com"
+  "userName": "Jane Doe",
+  "userEmail": "jane@example.com"
 }
 ```
 
-- **Aturan Transaksi**:
-  - `quantity`: Minimal 1 dan maksimal 4 tiket per transaksi.
-  - Sisa kuota tiket (`remaining_quota`) akan berkurang secara otomatis.
-  - Status pesanan diterbitkan sebagai `ISSUED` (terverifikasi), dan E-Ticket dikirimkan secara otomatis ke inbox Mailpit.
-
-- **Response Success (201 Created)**:
+- **Response (201 Created)**:
 ```json
 {
   "success": true,
@@ -416,8 +391,8 @@ Endpoint ini menangani pemesanan tiket dengan fitur **Atomic Quota Deduction** d
     "categoryName": "VIP Orchestral Pit",
     "quantity": 2,
     "totalPrice": 1500000,
-    "userName": "Budi Santoso",
-    "userEmail": "budi@example.com",
+    "userName": "Jane Doe",
+    "userEmail": "jane@example.com",
     "qrCode": "QR-SYM-849201",
     "status": "VERIFIED",
     "paymentMethod": "SANDBOX_PAYMENT",
@@ -426,359 +401,115 @@ Endpoint ini menangani pemesanan tiket dengan fitur **Atomic Quota Deduction** d
 }
 ```
 
----
-
-### 2. Public Ticket Lookup (Verifikasi Tiket Publik)
-- **URL**: `GET /api/v1/tickets/lookup?code=SYM-849201`
-- **Auth Required**: Tidak (Dapat diakses oleh siapa saja untuk verifikasi tiket cepat)
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "Tiket ditemukan",
-  "data": {
-    "id": "ord-uuid-5678",
-    "orderCode": "SYM-849201",
-    "eventTitle": "Symphony No. 5 in C minor",
-    "artist": "Royal Philharmonic Orchestra & Jakarta Choral Society",
-    "venue": "Aula Simfonia Jakarta",
-    "date": "Sabtu, 18 April 2026 @ 19:30 WIB",
-    "categoryName": "VIP Orchestral Pit",
-    "quantity": 2,
-    "totalPrice": 1500000,
-    "userName": "Budi Santoso",
-    "userEmail": "budi@example.com",
-    "qrCode": "QR-SYM-849201",
-    "status": "ISSUED",
-    "paymentMethod": "SANDBOX_PAYMENT",
-    "createdAt": "2026-08-04T07:15:00Z"
-  }
-}
-```
+#### 2. Public Ticket Lookup
+- **Method / URL**: `GET /api/v1/tickets/lookup?code=SYM-849201`
+- **Auth**: None
+- **Response (200 OK)**: Returns verified order record for pass printing and scanning.
 
 ---
 
-## 🔄 Modul 5: Pengajuan Refund Publik (`/api/v1/refunds`)
+### Module 5: Public Refunds (`/api/v1/refunds`)
 
-Modul ini memungkinkan pembeli (User maupun Guest) untuk mengajukan pengembalian dana (refund) melalui verifikasi OTP Email.
-
-### 1. Request OTP Verifikasi Refund
-- **URL**: `POST /api/v1/refunds/request-otp`
-- **Request Body**:
+#### 1. Request Refund OTP
+- **Method / URL**: `POST /api/v1/refunds/request-otp`
+- **Body**:
 ```json
 {
   "orderCode": "SYM-849201",
-  "userEmail": "budi@example.com"
+  "userEmail": "jane@example.com"
 }
 ```
-- **Validasi Keamanan**:
-  - Email harus cocok dengan pemegang tiket.
-  - Tiket bertipe `CHECKED_IN` (sudah di-scan di venue), `REFUNDED`, `REFUND_REQUESTED`, atau `CANCELLED` tidak dapat di-refund.
-- **Response Success (200 OK)**: Kode OTP 6-digit dikirim ke Mailpit (berlaku 10 menit).
+- **Rules**: Email must match ticket holder. Orders already marked `CHECKED_IN`, `REFUNDED`, or `CANCELLED` cannot be refunded.
 
-### 2. Submit Formulir Pengajuan Refund
-- **URL**: `POST /api/v1/refunds/submit`
-- **Request Body**:
+#### 2. Submit Refund Application
+- **Method / URL**: `POST /api/v1/refunds/submit`
+- **Body**:
 ```json
 {
   "orderCode": "SYM-849201",
-  "userEmail": "budi@example.com",
+  "userEmail": "jane@example.com",
   "otpCode": "847291",
   "bankName": "Bank Central Asia (BCA)",
   "accountNumber": "1234567890",
-  "accountHolder": "Budi Santoso",
-  "reason": "Halangan mendadak tugas luar kota"
-}
-```
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "Pengajuan refund berhasil dikirim. Tim Finance akan meninjau dan memproses pengembalian dana Anda.",
-  "data": {
-    "orderCode": "SYM-849201",
-    "status": "PENDING",
-    "bankName": "Bank Central Asia (BCA)",
-    "accountHolder": "Budi Santoso"
-  }
+  "accountHolder": "Jane Doe",
+  "reason": "Sudden business travel"
 }
 ```
 
-### 3. Cek Status Refund Publik
-- **URL**: `POST /api/v1/refunds/status`
-- **Request Body**:
+#### 3. Check Refund Status
+- **Method / URL**: `POST /api/v1/refunds/status`
+- **Body**:
 ```json
 {
   "orderCode": "SYM-849201",
-  "userEmail": "budi@example.com"
-}
-```
-- **Response Success (200 OK)**: Menampilkan status pesanan beserta detail permohonan refund dan `adminNote`.
-
----
-
-## 🛠️ Modul 6: Panel Manajemen Admin (`/api/v1/admin`)
-
-### 1. Admin Login
-- **URL**: `POST /api/v1/admin/login`
-- **Request Body**:
-```json
-{
-  "username": "admin",
-  "password": "123"
-}
-```
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "Login Admin berhasil",
-  "data": {
-    "username": "admin",
-    "token": "admin-session-token-symphoniatic-2026"
-  }
+  "userEmail": "jane@example.com"
 }
 ```
 
 ---
 
-### 2. Admin Dashboard & Metrics Analytics
-- **URL**: `GET /api/v1/admin/dashboard`
-- **Description**: Menyediakan analitik bisnis lengkap untuk dashboard admin secara real-time.
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "Metrik admin berhasil diambil",
-  "data": {
-    "totalRevenue": 15500000.00,
-    "ticketsSold": 32,
-    "remainingQuota": 245,
-    "totalEvents": 4,
-    "totalOrders": 18,
-    "eventStats": [
-      {
-        "eventId": "evt-1",
-        "title": "Symphony No. 5 in C minor",
-        "revenue": 9000000.00,
-        "ticketsSold": 15
-      }
-    ],
-    "revenueTimeline": [
-      { "month": "Mar", "revenue": 4500000.00, "tickets": 10 },
-      { "month": "Apr", "revenue": 11000000.00, "tickets": 22 }
-    ],
-    "categoryDistribution": [
-      { "name": "VIP Orchestral Pit", "value": 10500000.00 },
-      { "name": "CAT 1 Grand Tier", "value": 5000000.00 }
-    ],
-    "recentOrders": [
-      {
-        "id": "ord-uuid-5678",
-        "orderCode": "SYM-849201",
-        "eventTitle": "Symphony No. 5 in C minor",
-        "quantity": 2,
-        "totalPrice": 1500000.00,
-        "userName": "Budi Santoso",
-        "status": "ISSUED",
-        "createdAt": "2026-08-04T07:15:00Z"
-      }
-    ]
-  }
-}
-```
+### Module 6: Admin Management (`/api/v1/admin`)
+
+#### 1. Admin Login
+- **Method / URL**: `POST /api/v1/admin/login`
+- **Body**: `{ "username": "admin", "password": "123" }`
+- **Response (200 OK)**: Returns session admin token.
+
+#### 2. Admin Dashboard Metrics
+- **Method / URL**: `GET /api/v1/admin/dashboard`
+- **Response (200 OK)**: Returns revenue, sold tickets, remaining capacity, event breakdowns, and recent orders.
+
+#### 3. Upload Event Poster Image
+- **Method / URL**: `POST /api/v1/admin/upload`
+- **Content-Type**: `multipart/form-data` (Field: `image`)
+
+#### 4. Event CRUD
+- `POST /api/v1/admin/events`: Create concert event with initial categories.
+- `PUT /api/v1/admin/events/:id`: Update concert details.
+- `PATCH /api/v1/admin/events/:id/toggle-close`: Close or reopen ticket sales.
+- `DELETE /api/v1/admin/events/:id`: Delete event and cascade ticket categories.
+
+#### 5. Category CRUD
+- `POST /api/v1/admin/events/:id/categories`: Add category to event.
+- `PUT /api/v1/admin/categories/:id`: Update category price, name, and quota.
+- `DELETE /api/v1/admin/categories/:id`: Remove category.
+
+#### 6. Order Management
+- `GET /api/v1/admin/orders`: List transactions with optional search (`?search=`) and status filter (`?status=`).
+- `PATCH /api/v1/admin/orders/:id/status`: Update status (`CHECKED_IN`, `REMINDED`, `CANCELLED`). Updating to `REMINDED` triggers automated reminder email.
+
+#### 7. Refund Review
+- `GET /api/v1/admin/refunds`: List pending and past refund submissions.
+- `PATCH /api/v1/admin/refunds/:id/status`: Approve (`APPROVED`) or reject (`REJECTED`) refund.
+  - When approved, order status transitions to `REFUNDED` and category `remaining_quota` is automatically restored.
 
 ---
 
-### 3. Upload Gambar Event (Poster Upload)
-- **URL**: `POST /api/v1/admin/upload`
-- **Content-Type**: `multipart/form-data`
-- **Form Data Field**: `image` (file binary gambar `.jpg`, `.png`, `.webp`)
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "File gambar berhasil diunggah",
-  "data": {
-    "url": "http://localhost:8082/uploads/1722000000000.jpg"
-  }
-}
-```
+## Security & OTP Rate Limiting
+
+- **Expiration**: OTP expires after 5 minutes for authentication and 10 minutes for refunds.
+- **Cooldown**: Resend cooldown of 60 seconds enforced. Requests within the window return HTTP 429.
+- **Max Attempts**: Maximum 5 invalid attempts allowed before OTP is revoked.
 
 ---
 
-### 4. Manajemen Event Konser (Admin Event CRUD)
+## Database Schema (PostgreSQL)
 
-#### A. Tambah Event Konser Baru (Beserta Kategori Tiket)
-- **URL**: `POST /api/v1/admin/events`
-- **Request Body**:
-```json
-{
-  "title": "Simfoni Mahakarya Nusantara 2026",
-  "subtitle": "Konser Megah Lintas Generasi",
-  "artist": "Orkestra Youth Indonesia",
-  "conductor": "Maestro Addie MS",
-  "venue": "Aula Simfonia Jakarta",
-  "address": "Jl. Industri Blok B14 No.1, Kemayoran, Jakarta Pusat",
-  "date": "Sabtu, 15 November 2026",
-  "time": "19:30 WIB",
-  "openGate": "18:00 WIB",
-  "category": "NUSANTARA SYMPHONY",
-  "categoryBadgeColor": "bg-blue-900/80 text-blue-200 border-blue-500/40",
-  "image": "http://localhost:8082/uploads/1722000000000.jpg",
-  "audioUrl": "",
-  "organizer": "SymphoniaTic Management",
-  "description": "Pagelaran musik simfoni akbar memperingati hari musik...",
-  "rundown": [
-    { "time": "18:00 WIB", "activity": "Open Gate & Check In" },
-    { "time": "19:30 WIB", "activity": "Pertunjukan Utama Pembuka" }
-  ],
-  "categories": [
-    { "name": "VVIP Royal", "price": 1500000, "quota": 50 },
-    { "name": "VIP Platinum", "price": 1000000, "quota": 100 },
-    { "name": "Reguler Stalls", "price": 500000, "quota": 200 }
-  ]
-}
-```
-- **Response Success (201 Created)**: Mengembalikan data event dan daftar kategori tiket yang baru dibuat.
-
-#### B. Update Detail Event Konser
-- **URL**: `PUT /api/v1/admin/events/:id` (Contoh: `/api/v1/admin/events/evt-1`)
-- **Request Body**: Sama seperti `POST /api/v1/admin/events` (tanpa array `categories`).
-
-#### C. Tutup / Buka Penjualan Tiket Konser
-- **URL**: `PATCH /api/v1/admin/events/:id/toggle-close`
-- **Response Success (200 OK)**:
-```json
-{
-  "success": true,
-  "message": "Penjualan tiket konser berhasil ditutup",
-  "data": {
-    "eventId": "evt-1",
-    "isClosed": true
-  }
-}
-```
-
-#### D. Hapus Event Konser
-- **URL**: `DELETE /api/v1/admin/events/:id`
-- **Response Success (200 OK)**: Menghapus event beserta seluruh kategori tiket terkait secara *cascade*.
+- `events`: Master concert records, venues, dates, conductor, audio samples, and JSONB rundowns.
+- `ticket_categories`: Seating tiers (VIP, Reguler), price, total quota, and available quota per event.
+- `orders`: Purchase transactions, status (`ISSUED`, `VERIFIED`, `CHECKED_IN`, `REFUNDED`), price, and QR code string.
+- `refund_requests`: Customer refund applications, bank details, reason, status, and OTP verification records.
+- `users`: User accounts with bcrypt password hashes, profile details, and role (`USER` or `ADMIN`).
+- `auth_otps`: OTP dispatch and validation log for registration, login, and password resets.
 
 ---
 
-### 5. Manajemen Kategori Tiket (Admin Category CRUD)
+## Email Testing with Mailpit
 
-#### A. Tambah Kategori Tiket ke Event
-- **URL**: `POST /api/v1/admin/events/:id/categories` (Contoh: `/api/v1/admin/events/evt-1/categories`)
-- **Request Body**:
-```json
-{
-  "name": "Super VVIP Box",
-  "price": 2000000,
-  "quota": 20
-}
-```
-
-#### B. Update Kategori Tiket
-- **URL**: `PUT /api/v1/admin/categories/:id` (Contoh: `/api/v1/admin/categories/c1-vip`)
-- **Request Body**:
-```json
-{
-  "name": "VIP Orchestral Pit Revised",
-  "price": 800000,
-  "quota": 20
-}
-```
-*Sistem otomatis menyesuaikan `remaining_quota` secara proporsional sesuai selisih quota baru.*
-
-#### C. Hapus Kategori Tiket
-- **URL**: `DELETE /api/v1/admin/categories/:id`
-
----
-
-### 6. Kelola Transaksi Pesanan (Admin Orders Management)
-
-#### A. Ambil Semua Transaksi Pesanan Tiket
-- **URL**: `GET /api/v1/admin/orders`
-- **Query Params Opsional**:
-  - `?search=budi`: Cari berdasarkan kode order, nama pembeli, email, atau judul event.
-  - `?status=ISSUED`: Filter status (`ISSUED`, `VERIFIED`, `CHECKED_IN`, `REFUNDED`, `CANCELLED`).
-- **Response Success (200 OK)**: Mengembalikan array `OrderRecord[]`.
-
-#### B. Update Status Transaksi Pesanan Tiket
-- **URL**: `PATCH /api/v1/admin/orders/:id/status`
-- **Request Body**:
-```json
-{
-  "status": "CHECKED_IN"
-}
-```
-*Catatan Penting*: Jika `status` diubah menjadi `"REMINDED"`, sistem otomatis mengirimkan email pengingat pertunjukan konser ke email pembeli via Mailpit.
-
----
-
-### 7. Kelola Permohonan Refund (Admin Refund Management)
-
-#### A. Ambil Semua Permohonan Refund
-- **URL**: `GET /api/v1/admin/refunds`
-- **Response Success (200 OK)**: Mengembalikan daftar seluruh permohonan refund pembeli lengkap dengan data rekening bank dan detail tiket.
-
-#### B. Setujui atau Tolak Permohonan Refund
-- **URL**: `PATCH /api/v1/admin/refunds/:id/status`
-- **Request Body (Menyetujui Refund)**:
-```json
-{
-  "status": "APPROVED",
-  "adminNote": "Dana sebesar Rp 1.500.000 telah ditransfer ke rekening BCA Anda."
-}
-```
-- **Request Body (Menolak Refund)**:
-```json
-{
-  "status": "REJECTED",
-  "adminNote": "Pengajuan ditolak karena melewati batas waktu H-3 konser."
-}
-```
-- **Logika Bisnis Otomatis di Backend**:
-  - **Jika `APPROVED` / `COMPLETED`**:
-    1. Status pesanan di database otomatis berubah menjadi `REFUNDED`.
-    2. Kuota tiket (`remaining_quota`) pada kategori terkait **otomatis direstock (dikembalikan)**.
-    3. Email konfirmasi persetujuan refund dikirimkan ke pembeli.
-  - **Jika `REJECTED`**:
-    1. Status pesanan dikembalikan menjadi `VERIFIED`.
-    2. Email notifikasi penolakan beserta alasan admin dikirimkan ke pembeli.
-
----
-
-## 🛡️ Aturan Keamanan OTP & Rate Limiting
-
-Sistem Autentikasi dan Refund menggunakan mekanisme OTP teramankan dengan aturan berikut:
-
-- ⏱️ **Batas Waktu Expiry**: Kode OTP berlaku selama **5 menit** (Auth) / **10 menit** (Refund).
-- ⏳ **Resend Cooldown**: Pengiriman OTP ulang ditahan **60 detik**. Request sebelum 60 detik mengembalikan HTTP Status `429 Too Many Requests`.
-- ❌ **Max Attempt Limit**: Maksimal **5 kali salah** memasukkan OTP sebelum kode OTP secara otomatis dihanguskan (invalidated).
-
----
-
-## 🗄️ Skema Database PostgreSQL (Entity Relationship)
-
-Sistem menggunakan skema relational pada PostgreSQL dengan tabel utama:
-
-1. **`events`**: Menyimpan master data pertunjukan konser simfoni, venue, tanggal, konduktor, audio preview, & rundown (`JSONB`).
-2. **`ticket_categories`**: Menyimpan kategori tiket (VIP, CAT 1, dll), harga, total kuota, & `remaining_quota` per event.
-3. **`orders`**: Menyimpan data transaksi pesanan tiket, status (`ISSUED`, `CHECKED_IN`, `REFUNDED`), total harga, & QR Code.
-4. **`refund_requests`**: Menyimpan permohonan pengembalian dana, data rekening penerima, alasan, status refund, & OTP code.
-5. **`users`**: Menyimpan akun pengguna terdaftar, password hash (Bcrypt), nama, nomor hp, & role (`USER`/`ADMIN`).
-6. **`auth_otps`**: Menyimpan log OTP transaksi autentikasi (purpose: `REGISTER`, `LOGIN`, `FORGOT_PASSWORD`).
-
----
-
-## ✉️ Pengujian Email & Mailpit
-
-Seluruh pengiriman email pada environment lokal diarahkan ke server **Mailpit**:
-- Buka browser di **`http://localhost:8025`**.
-- Seluruh pesan email berikut dapat ditinjau secara visual:
-  - 📩 **Email Kode OTP Registrasi / Login / Reset Password**
-  - 🎟️ **Email E-Ticket dengan attachment QR Code & detail kursi**
-  - ⏰ **Email Pengingat Event Konser (Event Reminder)**
-  - 💰 **Email Notifikasi Status Refund (Approved / Rejected)**
+In local development, all outbound transactional email is sent to Mailpit:
+- Open browser at `http://localhost:8025`.
+- Inspect messages for:
+  - Account OTP codes (Registration, Login, Password Reset)
+  - E-Tickets with QR codes and venue guides
+  - Concert reminder notifications
+  - Refund approval or rejection notifications
