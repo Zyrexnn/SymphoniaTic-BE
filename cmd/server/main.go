@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
-	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
+	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
 	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -35,16 +35,11 @@ import (
 // @name Authorization
 // @description Type "Bearer <your_token>" to authenticate user/admin endpoints.
 
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Println("Warning: .env gagal ke-load:", err)
 	}
-
-	log.Println("DEBUG DB_PASSWORD:", os.Getenv("DB_PASSWORD"))
-	log.Println("DEBUG DB_USER:", os.Getenv("DB_USER"))
-	log.Println("DEBUG DB_HOST:", os.Getenv("DB_HOST"))
 
 	database.ConnectDB()
 
@@ -73,7 +68,7 @@ func main() {
 
 	api := app.Group("/api/v1")
 
-	// ─── Public Endpoints ───
+	// Public Endpoints
 	api.Get("/events", controllers.GetEvents)
 	api.Get("/events/:id", controllers.GetEventByID)
 	api.Post("/orders", controllers.CreateOrder)
@@ -84,7 +79,7 @@ func main() {
 	api.Post("/refunds/submit", controllers.SubmitRefund)
 	api.Post("/refunds/status", controllers.GetRefundStatus)
 
-	// ─── User Authentication Endpoints ───
+	// User Authentication Endpoints
 	auth := api.Group("/auth")
 	auth.Post("/register/request-otp", controllers.RequestRegisterOTP)
 	auth.Post("/register/verify-otp", controllers.VerifyRegisterOTP)
@@ -96,7 +91,7 @@ func main() {
 	auth.Post("/forgot-password/reset", controllers.ResetPassword)
 	auth.Get("/me", middleware.RequireUserAuth, controllers.GetMyProfile)
 
-	// ─── Protected User Account Endpoints ───
+	// Protected User Account Endpoints
 	userGroup := api.Group("/user", middleware.RequireUserAuth)
 	userGroup.Get("/orders", controllers.GetUserOrders)
 	userGroup.Get("/orders/:orderCode", controllers.GetUserOrderByCode)
@@ -105,37 +100,38 @@ func main() {
 	userGroup.Get("/dashboard-summary", controllers.GetUserDashboardSummary)
 	userGroup.Get("/refunds", controllers.GetUserRefunds)
 
-	// ─── Admin Endpoints ───
+	// Admin Endpoints
 	admin := api.Group("/admin")
 	admin.Post("/login", controllers.AdminLogin)
-	admin.Get("/dashboard", controllers.GetAdminDashboardMetrics)
-	admin.Post("/upload", controllers.UploadImage)
+
+	adminProtected := admin.Group("", middleware.RequireAdminAuth("ADMIN", "PETUGAS"))
+	adminProtected.Get("/dashboard", controllers.GetAdminDashboardMetrics)
+	adminProtected.Post("/upload", controllers.UploadImage)
 
 	// Admin Event CRUD Routes
-	admin.Post("/events", controllers.CreateEvent)
-	admin.Put("/events/:id", controllers.UpdateEvent)
-	admin.Patch("/events/:id/toggle-close", controllers.ToggleEventClose)
-	admin.Delete("/events/:id", controllers.DeleteEvent)
+	adminProtected.Post("/events", controllers.CreateEvent)
+	adminProtected.Put("/events/:id", controllers.UpdateEvent)
+	adminProtected.Patch("/events/:id/toggle-close", controllers.ToggleEventClose)
+	adminProtected.Delete("/events/:id", controllers.DeleteEvent)
 
 	// Admin Category CRUD Routes
-	admin.Post("/events/:id/categories", controllers.CreateTicketCategory)
-	admin.Put("/categories/:id", controllers.UpdateTicketCategory)
-	admin.Delete("/categories/:id", controllers.DeleteTicketCategory)
+	adminProtected.Post("/events/:id/categories", controllers.CreateTicketCategory)
+	adminProtected.Put("/categories/:id", controllers.UpdateTicketCategory)
+	adminProtected.Delete("/categories/:id", controllers.DeleteTicketCategory)
 
 	// Admin Orders Management Routes
-	admin.Get("/orders", controllers.GetAllOrders)
-	admin.Patch("/orders/:id/status", controllers.UpdateOrderStatus)
+	adminProtected.Get("/orders", controllers.GetAllOrders)
+	adminProtected.Patch("/orders/:id/status", controllers.UpdateOrderStatus)
 
 	// Admin Refund Management Routes
-	admin.Get("/refunds", controllers.AdminGetAllRefunds)
-	admin.Patch("/refunds/:id/status", controllers.AdminUpdateRefundStatus)
-
+	adminProtected.Get("/refunds", controllers.AdminGetAllRefunds)
+	adminProtected.Patch("/refunds/:id/status", controllers.AdminUpdateRefundStatus)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8082"
 	}
 
-	log.Printf("🚀 SymphoniaTic REST API Server berjalan di http://localhost:%s", port)
+	log.Printf("SymphoniaTic REST API Server berjalan di http://localhost:%s", port)
 	log.Fatal(app.Listen(":" + port))
 }
