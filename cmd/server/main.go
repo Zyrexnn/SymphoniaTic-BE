@@ -13,6 +13,7 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
 	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
+	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -46,6 +47,19 @@ func main() {
 
 	database.ConnectDBWithConfig(&cfg.Database)
 
+	eventRepo := repositories.NewEventRepository(database.DB)
+	orderRepo := repositories.NewOrderRepository(database.DB)
+	refundRepo := repositories.NewRefundRepository(database.DB)
+
+	eventCtrl := controllers.NewEventController(eventRepo)
+	categoryCtrl := controllers.NewCategoryController(eventRepo)
+	orderCtrl := controllers.NewOrderController(orderRepo)
+	ticketCtrl := controllers.NewTicketController(orderRepo)
+	refundCtrl := controllers.NewRefundController(refundRepo)
+	adminCtrl := controllers.NewAdminController(orderRepo, &cfg.Auth)
+
+	controllers.InitDefaultControllers(database.DB, &cfg.Auth)
+
 	app := fiber.New(fiber.Config{
 		AppName: "SymphoniaTic Native Golang REST API Server",
 	})
@@ -72,15 +86,15 @@ func main() {
 	api := app.Group("/api/v1")
 
 	// Public Endpoints
-	api.Get("/events", controllers.GetEvents)
-	api.Get("/events/:id", controllers.GetEventByID)
-	api.Post("/orders", controllers.CreateOrder)
-	api.Get("/tickets/lookup", controllers.LookupTicketByCode)
+	api.Get("/events", eventCtrl.GetEvents)
+	api.Get("/events/:id", eventCtrl.GetEventByID)
+	api.Post("/orders", orderCtrl.CreateOrder)
+	api.Get("/tickets/lookup", ticketCtrl.LookupTicketByCode)
 
 	// Refund Routes
-	api.Post("/refunds/request-otp", controllers.RequestRefundOTP)
-	api.Post("/refunds/submit", controllers.SubmitRefund)
-	api.Post("/refunds/status", controllers.GetRefundStatus)
+	api.Post("/refunds/request-otp", refundCtrl.RequestRefundOTP)
+	api.Post("/refunds/submit", refundCtrl.SubmitRefund)
+	api.Post("/refunds/status", refundCtrl.GetRefundStatus)
 
 	// User Authentication Endpoints
 	auth := api.Group("/auth")
@@ -105,30 +119,30 @@ func main() {
 
 	// Admin Endpoints
 	admin := api.Group("/admin")
-	admin.Post("/login", controllers.AdminLogin)
+	admin.Post("/login", adminCtrl.AdminLogin)
 
 	adminProtected := admin.Group("", middleware.RequireAdminAuth("ADMIN", "PETUGAS"))
-	adminProtected.Get("/dashboard", controllers.GetAdminDashboardMetrics)
-	adminProtected.Post("/upload", controllers.UploadImage)
+	adminProtected.Get("/dashboard", adminCtrl.GetAdminDashboardMetrics)
+	adminProtected.Post("/upload", adminCtrl.UploadImage)
 
 	// Admin Event CRUD Routes
-	adminProtected.Post("/events", controllers.CreateEvent)
-	adminProtected.Put("/events/:id", controllers.UpdateEvent)
-	adminProtected.Patch("/events/:id/toggle-close", controllers.ToggleEventClose)
-	adminProtected.Delete("/events/:id", controllers.DeleteEvent)
+	adminProtected.Post("/events", eventCtrl.CreateEvent)
+	adminProtected.Put("/events/:id", eventCtrl.UpdateEvent)
+	adminProtected.Patch("/events/:id/toggle-close", eventCtrl.ToggleEventClose)
+	adminProtected.Delete("/events/:id", eventCtrl.DeleteEvent)
 
 	// Admin Category CRUD Routes
-	adminProtected.Post("/events/:id/categories", controllers.CreateTicketCategory)
-	adminProtected.Put("/categories/:id", controllers.UpdateTicketCategory)
-	adminProtected.Delete("/categories/:id", controllers.DeleteTicketCategory)
+	adminProtected.Post("/events/:id/categories", categoryCtrl.CreateTicketCategory)
+	adminProtected.Put("/categories/:id", categoryCtrl.UpdateTicketCategory)
+	adminProtected.Delete("/categories/:id", categoryCtrl.DeleteTicketCategory)
 
 	// Admin Orders Management Routes
-	adminProtected.Get("/orders", controllers.GetAllOrders)
-	adminProtected.Patch("/orders/:id/status", controllers.UpdateOrderStatus)
+	adminProtected.Get("/orders", orderCtrl.GetAllOrders)
+	adminProtected.Patch("/orders/:id/status", orderCtrl.UpdateOrderStatus)
 
 	// Admin Refund Management Routes
-	adminProtected.Get("/refunds", controllers.AdminGetAllRefunds)
-	adminProtected.Patch("/refunds/:id/status", controllers.AdminUpdateRefundStatus)
+	adminProtected.Get("/refunds", refundCtrl.AdminGetAllRefunds)
+	adminProtected.Patch("/refunds/:id/status", refundCtrl.AdminUpdateRefundStatus)
 
 	serverShutdown := make(chan struct{})
 	go func() {

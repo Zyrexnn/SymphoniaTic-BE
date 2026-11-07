@@ -22,6 +22,7 @@ import (
 func setupTestApp() *fiber.App {
 	_ = godotenv.Load("../.env")
 	database.ConnectDB()
+	_, _ = database.DB.Exec("UPDATE ticket_categories SET remaining_quota = quota WHERE id = 'c1-vip'")
 
 	app := fiber.New()
 	api := app.Group("/api/v1")

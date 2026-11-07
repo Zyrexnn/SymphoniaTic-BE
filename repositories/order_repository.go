@@ -28,6 +28,10 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	defer tx.Rollback()
 
 	// Memeriksa status penutupan konser terlebih dahulu sebelum mengunci baris kategori tiket guna meminimalkan durasi dan contention row lock
+	if req.EventID == "" && req.TicketCategoryID != "" {
+		_ = tx.QueryRowContext(ctx, "SELECT event_id FROM ticket_categories WHERE id = $1", req.TicketCategoryID).Scan(&req.EventID)
+	}
+
 	var evtTitle, evtArtist, evtVenue, evtDate, evtTime string
 	var evtClosed bool
 	err = tx.QueryRowContext(ctx, `
