@@ -99,6 +99,8 @@ func initSchema() {
 	CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_event_id ON orders(event_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_user_email_lower ON orders(LOWER(user_email));
+	CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+	CREATE INDEX IF NOT EXISTS idx_orders_created_at_status ON orders(created_at, status);
 	CREATE INDEX IF NOT EXISTS idx_ticket_categories_event_id ON ticket_categories(event_id);
 
 	CREATE TABLE IF NOT EXISTS refund_requests (

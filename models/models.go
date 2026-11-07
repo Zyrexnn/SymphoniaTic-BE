@@ -278,5 +278,43 @@ type UserDashboardSummary struct {
 	PastEventsCount     int `json:"pastEventsCount"`
 	ActiveRefundsCount  int `json:"activeRefundsCount"`
 }
+type EventRevenueStat struct {
+	EventID     string  `json:"eventId"`
+	Title       string  `json:"title"`
+	Revenue     float64 `json:"revenue"`
+	TicketsSold int     `json:"ticketsSold"`
+}
 
+type TimelineStat struct {
+	Month   string  `json:"month"`
+	Revenue float64 `json:"revenue"`
+	Tickets int     `json:"tickets"`
+}
 
+type CategoryStat struct {
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
+}
+
+type RecentOrderSummary struct {
+	ID         string    `json:"id"`
+	OrderCode  string    `json:"orderCode"`
+	EventTitle string    `json:"eventTitle"`
+	Quantity   int       `json:"quantity"`
+	TotalPrice float64   `json:"totalPrice"`
+	UserName   string    `json:"userName"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+type AdminDashboardMetrics struct {
+	TotalRevenue         float64              `json:"totalRevenue"`
+	TicketsSold          int                  `json:"ticketsSold"`
+	RemainingQuota       int                  `json:"remainingQuota"`
+	TotalEvents          int                  `json:"totalEvents"`
+	TotalOrders          int                  `json:"totalOrders"`
+	EventStats           []EventRevenueStat   `json:"eventStats"`
+	RecentOrders         []RecentOrderSummary `json:"recentOrders"`
+	RevenueTimeline      []TimelineStat       `json:"revenueTimeline"`
+	CategoryDistribution []CategoryStat       `json:"categoryDistribution"`
+}

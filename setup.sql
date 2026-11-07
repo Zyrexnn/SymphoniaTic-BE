@@ -62,6 +62,8 @@ CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
 CREATE INDEX IF NOT EXISTS idx_ticket_categories_event_id ON ticket_categories(event_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_code ON orders(order_code);
 CREATE INDEX IF NOT EXISTS idx_orders_user_email ON orders(user_email);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at_status ON orders(created_at, status);
 
 CREATE TABLE IF NOT EXISTS refund_requests (
     id VARCHAR(64) PRIMARY KEY,
