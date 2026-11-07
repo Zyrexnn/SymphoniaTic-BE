@@ -19,9 +19,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func setupTestApp() *fiber.App {
+func setupTestApp(t *testing.T) *fiber.App {
 	_ = godotenv.Load("../.env")
-	database.ConnectDB()
+	if err := database.TryConnectDB(); err != nil {
+		t.Skip("PostgreSQL database tidak tersedia, melewati E2E test")
+		return nil
+	}
 	_, _ = database.DB.Exec("UPDATE ticket_categories SET remaining_quota = quota WHERE id = 'c1-vip'")
 
 	app := fiber.New()
@@ -58,7 +61,14 @@ func setupTestApp() *fiber.App {
 }
 
 func TestE2ECompleteUserFlow(t *testing.T) {
-	app := setupTestApp()
+	if testing.Short() {
+		t.Skip("Melewati E2E integration test pada mode short (tanpa koneksi live PostgreSQL)")
+	}
+
+	app := setupTestApp(t)
+	if app == nil {
+		return
+	}
 
 	testEmail := fmt.Sprintf("testuser_%d@symphoniatic.com", time.Now().UnixNano())
 	testName := "E2E Test User"

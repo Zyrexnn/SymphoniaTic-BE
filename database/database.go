@@ -11,11 +11,11 @@ import (
 
 var DB *sql.DB
 
-func ConnectDBWithConfig(cfg *config.DatabaseConfig) {
+func TryConnectDBWithConfig(cfg *config.DatabaseConfig) error {
 	var err error
 	DB, err = sql.Open("postgres", cfg.DSN())
 	if err != nil {
-		log.Fatalf("Gagal membuka koneksi PostgreSQL: %v", err)
+		return err
 	}
 
 	DB.SetMaxOpenConns(25)
@@ -24,20 +24,32 @@ func ConnectDBWithConfig(cfg *config.DatabaseConfig) {
 	DB.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err = DB.Ping(); err != nil {
-		log.Fatalf("Gagal ping PostgreSQL: %v", err)
+		return err
 	}
 
 	log.Println("Berhasil terhubung ke database PostgreSQL")
-
 	initSchema()
+	return nil
+}
+
+func TryConnectDB() error {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	return TryConnectDBWithConfig(&cfg.Database)
+}
+
+func ConnectDBWithConfig(cfg *config.DatabaseConfig) {
+	if err := TryConnectDBWithConfig(cfg); err != nil {
+		log.Fatalf("Gagal membuka koneksi PostgreSQL: %v", err)
+	}
 }
 
 func ConnectDB() {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		log.Fatalf("Gagal memuat konfigurasi database: %v", err)
+	if err := TryConnectDB(); err != nil {
+		log.Fatalf("Gagal membuka koneksi PostgreSQL: %v", err)
 	}
-	ConnectDBWithConfig(&cfg.Database)
 }
 
 func initSchema() {

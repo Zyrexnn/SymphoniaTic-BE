@@ -168,8 +168,8 @@ func (c *AdminController) UploadImage(ctx *fiber.Ctx) error {
 		})
 	}
 
-	uploadDir := filepath.Clean("uploads")
-	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+	uploadsDir := filepath.Clean("uploads")
+	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal membuat folder penyimpanan",
@@ -178,10 +178,10 @@ func (c *AdminController) UploadImage(ctx *fiber.Ctx) error {
 	}
 
 	fileExtension := filepath.Ext(uploadedFile.Filename)
-	uniqueFilename := fmt.Sprintf("%d%s", time.Now().UnixNano(), fileExtension)
-	uploadDestPath := filepath.Clean(filepath.Join(uploadDir, uniqueFilename))
+	filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), fileExtension)
+	savePath := filepath.Clean(filepath.Join(uploadsDir, filename))
 
-	if err := ctx.SaveFile(uploadedFile, uploadDestPath); err != nil {
+	if err := ctx.SaveFile(uploadedFile, savePath); err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal menyimpan file gambar",
@@ -196,11 +196,14 @@ func (c *AdminController) UploadImage(ctx *fiber.Ctx) error {
 		baseURL = strings.TrimSuffix(baseURL, "/api/v1")
 	}
 
+	// URL publik selalu menggunakan forward slash '/' untuk konsistensi HTTP pada sistem operasi Windows, Linux, dan macOS
+	publicURL := fmt.Sprintf("%s/uploads/%s", strings.TrimRight(baseURL, "/"), filename)
+
 	return ctx.JSON(models.APIResponse{
 		Success: true,
 		Message: "File gambar berhasil diunggah",
 		Data: fiber.Map{
-			"url": fmt.Sprintf("%s/uploads/%s", baseURL, uniqueFilename),
+			"url": publicURL,
 		},
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -81,7 +82,7 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	app.Static("/uploads", "./uploads")
+	app.Static("/uploads", filepath.Clean("./uploads"))
 
 	// Swagger UI Route
 	app.Get("/swagger/*", swagger.HandlerDefault)
