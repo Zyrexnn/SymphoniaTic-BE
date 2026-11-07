@@ -1,0 +1,56 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'refactor/**'
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  test-and-build:
+    name: Test and Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout Kode Sumber
+        uses: actions/checkout@v4
+
+      - name: Pasang Go Runtime
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Verifikasi Modul dan Checksum Go
+        shell: bash
+        run: |
+          go mod verify
+          git diff --exit-code go.sum
+
+      - name: Jalankan Pengujian Unit dengan Race Detector (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: go test -short -v -race ./...
+
+      - name: Jalankan Pengujian Unit (Windows)
+        if: runner.os == 'Windows'
+        run: go test -short -v ./...
+
+      - name: Kompilasi Seluruh Paket
+        run: go build -v ./...
+
+      - name: Build Binary Server (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: go build -o bin/server ./cmd/server
+
+      - name: Build Binary Server (Windows)
+        if: runner.os == 'Windows'
+        run: go build -o bin/server.exe ./cmd/server

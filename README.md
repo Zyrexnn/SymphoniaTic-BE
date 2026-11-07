@@ -68,6 +68,144 @@ API server is active at `http://localhost:8082`. Swagger docs are available at `
 
 ---
 
+## Multi-Platform Development & Build Scripts
+
+SymphoniaTic Backend mendukung pengembangan lintas platform (Linux, macOS, dan Windows). Tersedia otomatisasi build script untuk mempermudah eksekusi pengujian, kompilasi binary, dan pembersihan direktori.
+
+### Linux & macOS (`Makefile`)
+Gunakan utilitas `make` untuk menjalankan target yang telah dikonfigurasi:
+```bash
+# Menjalankan unit test
+make test
+
+# Menjalankan unit test dengan race detector aktif
+make test-race
+
+# Kompilasi binary server ke direktori bin/server
+make build
+
+# Menjalankan server development secara langsung
+make run
+
+# Merapikan dan memverifikasi dependensi modul Go
+make tidy
+
+# Membersihkan file build dan folder bin/
+make clean
+```
+
+### Windows (`build.ps1` PowerShell)
+Pengembang Windows dapat menggunakan skrip PowerShell yang setara:
+```powershell
+# Menjalankan unit test
+.\build.ps1 test
+
+# Menjalankan unit test dengan race detector
+.\build.ps1 test-race
+
+# Kompilasi binary server ke bin\server.exe
+.\build.ps1 build
+
+# Menjalankan server development
+.\build.ps1 run
+
+# Merapikan dependensi modul Go
+.\build.ps1 tidy
+
+# Membersihkan folder bin
+.\build.ps1 clean
+```
+
+### Perintah Langsung Go CLI
+Bagi pengembang yang tidak menggunakan `make` atau PowerShell:
+```bash
+# Menjalankan unit test
+go test -short -v ./...
+
+# Kompilasi lintas platform
+# Linux / macOS:
+go build -o bin/server ./cmd/server
+# Windows:
+go build -o bin/server.exe ./cmd/server
+
+# Menjalankan server
+go run ./cmd/server
+```
+
+---
+
+## Software Architecture & Design Patterns
+
+Arsitektur SymphoniaTic Backend menerapkan pemisahan tanggung jawab berbasis *Domain-Driven Layering*, native SQL tanpa dependensi ORM, serta pemrosesan konkurensi asinkron yang aman:
+
+```text
+be/
+├── cmd/server/
+│   └── main.go              # Entrypoint aplikasi, konfigurasi CORS, dependency injection, graceful shutdown
+├── config/
+│   ├── config.go            # Centralized strongly-typed configuration dengan validasi nilai default
+│   └── config_test.go       # Pengujian unit parsing konfigurasi
+├── controllers/             # Domain-driven HTTP handlers (Fiber context)
+│   ├── admin_controller.go  # Endpoint manajemen event, metrik finansial, dan audit admin
+│   ├── auth.go              # Autentikasi customer, OTP registrasi, password reset, dan JWT
+│   ├── category_controller.go # Pengelolaan kategori tiket konser (harga, kuota)
+│   ├── event_controller.go  # Katalog publik event konser dan rundown pertunjukan
+│   ├── order_controller.go  # Checkout pemesanan tiket dengan isolasi transaksi
+│   ├── refund_controller.go # Pengajuan dan verifikasi pengembalian dana publik
+│   ├── ticket_controller.go # Lookup tiket konser dan validasi e-ticket
+│   └── user.go              # Manajemen profil pengguna dan ringkasan transaksi
+├── database/                # Inisialisasi pool PostgreSQL native dan auto-migration DDL
+├── repositories/            # Data access layer berbasis interface dan native SQL
+│   ├── interfaces.go        # Kontrak antarmuka: EventRepository, OrderRepository, RefundRepository, UserRepository
+│   ├── event_repository.go  # Query konser, kategori tiket, dan optimasi join
+│   ├── order_repository.go  # Query pesanan tiket, row locking FOR UPDATE, dan update status
+│   ├── refund_repository.go # Query pengajuan refund dan pemulihan kuota tiket
+│   ├── user_repository.go   # Query data akun pengguna, role, dan verifikasi kredensial
+│   └── repository_mock.go   # Implementasi in-memory mock untuk pengujian unit independen
+├── services/                # Integrasi layanan eksternal
+│   ├── mailer.go            # Bounded email worker pool asinkron dengan fallback goroutine
+│   ├── email_templates.go   # Engine rendering template email berbasis Go embed.FS
+│   └── templates/           # Template HTML: eticket, pengingat, refund OTP, status refund, auth OTP
+├── utils/                   # Utilitas kriptografi, hash password, token JWT, dan standarisasi response
+└── docs/                    # Dokumentasi OpenAPI / Swagger otomatis
+```
+
+### 1. Centralized Configuration & Graceful Shutdown
+- Konfigurasi aplikasi dikelola secara terpusat pada paket `config/` menggunakan struct `Config` dengan nilai default yang aman untuk pengujian maupun deployment produksi.
+- Server mendengarkan sinyal OS (`SIGINT`, `SIGTERM`) untuk menjalankan *graceful shutdown*: menutup koneksi HTTP Fiber, menguras antrean worker email, dan menutup koneksi database pool tanpa memutus transaksi yang sedang aktif.
+
+### 2. Domain-Driven Controllers & Repository Layer
+- Controller didekomposisi per domain spesifik untuk memisahkan logika validasi HTTP dari akses data.
+- Paket `repositories/` menyediakan abstraksi antarmuka (interface) menggunakan native `database/sql`. Hal ini memastikan performa query optimal dan memfasilitasi *mocking* saat unit testing tanpa memerlukan koneksi database riil.
+- Transaksi pemesanan tiket pada `OrderRepository` menerapkan `SELECT ... FOR UPDATE` untuk mencegah *race condition* dan *overselling* kuota tiket saat lonjakan trafik bersamaan.
+
+### 3. Bounded Email Worker Pool
+- Layanan pengiriman email pada `services/mailer.go` menggunakan pola *worker pool* dengan channel berpenyangga (*buffered channel*) berkapasitas 100 job dan 3 goroutine pekerja paralel.
+- Dilengkapi mekanisme fallback: jika antrean utama penuh, sistem menjalankan *standby worker* non-blocking agar permintaan klien tidak mengalami *timeout*.
+- Seluruh template HTML e-tiket dan OTP di-*embed* langsung ke dalam binary aplikasi menggunakan fitur `embed.FS` standar Go.
+
+### 4. Comprehensive Testing Suite & Mock Repositories
+- Seluruh paket controller, repository, worker pool email, dan fungsi utilitas telah dilengkapi dengan rangkaian *unit test* komprehensif.
+- Menggunakan `repository_mock.go` untuk mensimulasikan kegagalan database, konflik kuota, dan validasi response tanpa dependensi eksternal.
+
+---
+
+## Continuous Integration & Delivery (CI/CD)
+
+SymphoniaTic Backend menerapkan otomatisasi pipeline CI/CD menggunakan **GitHub Actions** (`.github/workflows/ci.yml`).
+
+### Karakteristik Pipeline
+- **Multi-OS Matrix**: Setiap perubahan kode diuji secara paralel di 3 sistem operasi utama:
+  - `ubuntu-latest` (Linux)
+  - `macos-latest` (macOS)
+  - `windows-latest` (Windows)
+- **Verifikasi Dependensi**: Memeriksa integritas checksum modul menggunakan `go mod verify` dan memastikan konsistensi file `go.sum`.
+- **Pengujian Unit & Deteksi Race Condition**: Menjalankan pengujian unit dengan race detector (`-race`) pada lingkungan Linux dan macOS, serta pengujian komprehensif pada Windows.
+- **Kompilasi Binary Multi-Platform**: Memverifikasi kompilasi binary server untuk format target masing-masing OS (`bin/server` pada Linux/macOS dan `bin/server.exe` pada Windows).
+- **Triggers**: Pipeline berjalan otomatis pada aksi `push` ke branch `main`, `master`, `refactor/**`, serta pada setiap `pull_request` menuju `main` dan `master`.
+
+---
+
 ## Standard API Response Envelope
 
 All endpoints in the SymphoniaTic REST API return consistent JSON structures using the `APIResponse` envelope:
