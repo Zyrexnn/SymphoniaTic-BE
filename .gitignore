@@ -31,3 +31,10 @@ panduan.md
 # Uploads
 uploads/*
 !uploads/.gitkeep
+
+# Git Worktrees
+.worktrees
+.worktrees/
+worktrees
+worktrees/
+
