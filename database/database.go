@@ -2,39 +2,18 @@ package database
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
-	"os"
 	"time"
 
+	"github.com/Zyrexnn/SymphoniaTic-be/config"
 	_ "github.com/lib/pq"
 )
 
 var DB *sql.DB
 
-func ConnectDB() {
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	user := os.Getenv("DB_USER")
-	password := os.Getenv("DB_PASSWORD")
-	dbname := os.Getenv("DB_NAME")
-	sslmode := os.Getenv("DB_SSLMODE")
-
-	if host == "" {
-		host = "localhost"
-	}
-	if port == "" {
-		port = "5432"
-	}
-	if sslmode == "" {
-		sslmode = "disable"
-	}
-
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode)
-
+func ConnectDBWithConfig(cfg *config.DatabaseConfig) {
 	var err error
-	DB, err = sql.Open("postgres", dsn)
+	DB, err = sql.Open("postgres", cfg.DSN())
 	if err != nil {
 		log.Fatalf("Gagal membuka koneksi PostgreSQL: %v", err)
 	}
@@ -48,9 +27,17 @@ func ConnectDB() {
 		log.Fatalf("Gagal ping PostgreSQL: %v", err)
 	}
 
-	log.Println("✅ Berhasil terhubung ke database PostgreSQL!")
+	log.Println("Berhasil terhubung ke database PostgreSQL")
 
 	initSchema()
+}
+
+func ConnectDB() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Gagal memuat konfigurasi database: %v", err)
+	}
+	ConnectDBWithConfig(&cfg.Database)
 }
 
 func initSchema() {
@@ -169,7 +156,7 @@ func initSchema() {
 		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
 	}
 
-	log.Println("✅ Skema database PostgreSQL (events, ticket_categories, orders, users, auth_otps) siap!")
+	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, users, auth_otps) siap")
 	seedInitialData()
 }
 
@@ -180,7 +167,7 @@ func seedInitialData() {
 		return
 	}
 
-	log.Println("🌱 Melakukan seeding data awal konser & kategori tiket...")
+	log.Println("Melakukan seeding data awal konser & kategori tiket...")
 
 	tx, err := DB.Begin()
 	if err != nil {
@@ -325,5 +312,5 @@ func seedInitialData() {
 	}
 
 	_ = tx.Commit()
-	log.Println("✅ Seeding data awal konser selesai!")
+	log.Println("Seeding data awal konser selesai")
 }

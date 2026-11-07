@@ -2,9 +2,13 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
+	"github.com/Zyrexnn/SymphoniaTic-be/config"
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
@@ -13,7 +17,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/swagger"
-	"github.com/joho/godotenv"
 )
 
 // @title SymphoniaTic REST API Documentation
@@ -36,12 +39,12 @@ import (
 // @description Type "Bearer <your_token>" to authenticate user/admin endpoints.
 
 func main() {
-	err := godotenv.Load()
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Println("Warning: .env gagal ke-load:", err)
+		log.Fatalf("Gagal memuat konfigurasi server: %v", err)
 	}
 
-	database.ConnectDB()
+	database.ConnectDBWithConfig(&cfg.Database)
 
 	app := fiber.New(fiber.Config{
 		AppName: "SymphoniaTic Native Golang REST API Server",
@@ -127,11 +130,25 @@ func main() {
 	adminProtected.Get("/refunds", controllers.AdminGetAllRefunds)
 	adminProtected.Patch("/refunds/:id/status", controllers.AdminUpdateRefundStatus)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8082"
-	}
+	serverShutdown := make(chan struct{})
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		<-sigChan
+		log.Println("Menerima sinyal terminasi, menghentikan server secara graceful...")
+		if err := app.Shutdown(); err != nil {
+			log.Printf("Gagal menghentikan server Fiber: %v", err)
+		}
+		if database.DB != nil {
+			_ = database.DB.Close()
+		}
+		close(serverShutdown)
+	}()
 
-	log.Printf("SymphoniaTic REST API Server berjalan di http://localhost:%s", port)
-	log.Fatal(app.Listen(":" + port))
+	log.Printf("SymphoniaTic REST API Server berjalan di http://localhost:%s", cfg.Server.Port)
+	if err := app.Listen(":" + cfg.Server.Port); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Server Fiber terhenti dengan error: %v", err)
+	}
+	<-serverShutdown
+	log.Println("Server berhasil dihentikan dengan aman.")
 }
