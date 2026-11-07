@@ -14,6 +14,7 @@ import (
 	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
 	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
+	"github.com/Zyrexnn/SymphoniaTic-be/services"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -46,6 +47,8 @@ func main() {
 	}
 
 	database.ConnectDBWithConfig(&cfg.Database)
+
+	services.InitMailerWorkerPool(&cfg.SMTP, 5, 200)
 
 	eventRepo := repositories.NewEventRepository(database.DB)
 	orderRepo := repositories.NewOrderRepository(database.DB)
@@ -153,6 +156,7 @@ func main() {
 		if err := app.Shutdown(); err != nil {
 			log.Printf("Gagal menghentikan server Fiber: %v", err)
 		}
+		services.ShutdownMailer()
 		if database.DB != nil {
 			_ = database.DB.Close()
 		}

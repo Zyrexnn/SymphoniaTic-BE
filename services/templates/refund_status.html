@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Update Status Refund SymphoniaTic</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 550px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 25px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
+        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; }
+        .content { padding: 25px; }
+        .status-badge { display: inline-block; background-color: {{.BadgeColor}}; color: #ffffff; padding: 6px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin: 15px 0; }
+        .box { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 15px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SYMPHONIATIC REFUND UPDATE</h1>
+            <p style="margin:5px 0 0 0; color:#94a3b8; font-size:14px;">Kode Pesanan: {{.OrderCode}}</p>
+        </div>
+        <div class="content">
+            <p>Halo,</p>
+            <p>Pengajuan refund tiket Anda untuk pesanan <strong>{{.OrderCode}}</strong> telah diproses oleh tim finance kami.</p>
+            
+            <div style="text-align:center;">
+                <span class="status-badge">STATUS: {{.StatusTitle}}</span>
+            </div>
+
+            <div class="box">
+                <p style="margin:0; font-size:13px; color:#94a3b8;">Nominal Refund:</p>
+                <p style="margin:4px 0 10px 0; font-size:18px; font-weight:bold; color:#38bdf8;">Rp {{formatCurrency .Amount}}</p>
+                <p style="margin:0; font-size:13px; color:#94a3b8;">Catatan Admin:</p>
+                <p style="margin:4px 0 0 0; font-size:14px; color:#f8fafc;">{{.AdminNote}}</p>
+            </div>
+
+            <p style="font-size:13px; color:#94a3b8; text-align:center;">Jika Anda memiliki pertanyaan lebih lanjut, silakan hubungi tim bantuan kami di support@symphoniatic.id.</p>
+        </div>
+    </div>
+</body>
+</html>

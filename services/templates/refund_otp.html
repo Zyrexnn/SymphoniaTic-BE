@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Kode OTP Refund SymphoniaTic</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
+        .container { max-width: 550px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; }
+        .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 25px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
+        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; }
+        .content { padding: 25px; text-align: center; }
+        .otp-box { background: #0f172a; border: 2px dashed #6366f1; border-radius: 12px; padding: 20px; margin: 20px 0; display: inline-block; }
+        .otp-code { font-size: 32px; font-weight: bold; color: #38bdf8; letter-spacing: 8px; }
+        .warning { font-size: 13px; color: #f59e0b; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SYMPHONIATIC REFUND</h1>
+            <p style="margin:5px 0 0 0; color:#94a3b8; font-size:14px;">Kode Verifikasi Keamanan Pengajuan Refund Tiket</p>
+        </div>
+        <div class="content">
+            <p style="color:#cbd5e1; text-align:left;">Anda (atau seseorang) baru saja mengajukan permintaan refund untuk Kode Pesanan: <strong>{{.OrderCode}}</strong>.</p>
+            <p style="color:#cbd5e1; text-align:left;">Gunakan kode OTP di bawah ini untuk melanjutkan formulir pengajuan refund:</p>
+            
+            <div class="otp-box">
+                <div class="otp-code">{{.OTPCode}}</div>
+            </div>
+
+            <p style="font-size:13px; color:#94a3b8;">Kode OTP ini berlaku selama <strong>10 menit</strong>. Jangan bagikan kode ini kepada siapapun demi keamanan transaksi Anda.</p>
+            <p class="warning">⚠️ Jika Anda tidak pernah merasa mengajukan refund, abaikan email ini.</p>
+        </div>
+    </div>
+</body>
+</html>
