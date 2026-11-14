@@ -449,22 +449,11 @@ func (r *orderRepository) GetUserDashboardSummary(ctx context.Context, userID, u
 	var summary models.UserDashboardSummary
 
 	err := r.db.QueryRowContext(ctx, `
-		WITH user_orders AS (
-			SELECT status, quantity
-			FROM orders
-			WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2))
-		),
-		user_refunds AS (
-			SELECT status
-			FROM refund_requests
-			WHERE LOWER(user_email) = LOWER($2)
-		)
 		SELECT
-			COALESCE(SUM(CASE WHEN UPPER(status) != 'REFUNDED' THEN quantity ELSE 0 END), 0),
-			COALESCE(COUNT(CASE WHEN UPPER(status) = 'ISSUED' THEN 1 END), 0),
-			COALESCE(COUNT(CASE WHEN UPPER(status) = 'CHECKED_IN' THEN 1 END), 0),
-			COALESCE((SELECT COUNT(*) FROM user_refunds WHERE UPPER(status) = 'PENDING'), 0)
-		FROM user_orders
+			COALESCE((SELECT SUM(quantity) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) != 'REFUNDED'), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) IN ('ISSUED', 'VERIFIED')), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) = 'CHECKED_IN'), 0),
+			COALESCE((SELECT COUNT(*) FROM refund_requests WHERE LOWER(user_email) = LOWER($2) AND UPPER(status) = 'PENDING'), 0)
 	`, userID, userEmail).Scan(
 		&summary.TotalTicketsBought,
 		&summary.UpcomingEventsCount,
