@@ -181,6 +181,67 @@ func (r *orderRepository) LookupTicketByCode(ctx context.Context, code string) (
 	return r.GetOrderByCode(ctx, code)
 }
 
+func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+	cleanCode := strings.TrimSpace(orderCode)
+	if strings.HasPrefix(strings.ToUpper(cleanCode), "QR-") {
+		cleanCode = cleanCode[3:]
+	}
+	cleanCode = strings.TrimSpace(cleanCode)
+	if cleanCode == "" {
+		return nil, ErrNotFound
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memulai transaksi check-in tiket: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Penguncian baris FOR UPDATE digunakan untuk memastikan tidak terjadi race condition atau double check-in saat pemindaian berulang secara simultan
+	var record models.OrderRecord
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
+		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
+		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
+		FROM orders
+		WHERE LOWER(order_code) = LOWER($1)
+		FOR UPDATE
+	`, cleanCode).Scan(
+		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
+		&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
+		&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
+		&record.Status, &record.PaymentMethod, &record.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("gagal memverifikasi data tiket: %w", err)
+	}
+
+	switch record.Status {
+	case "CHECKED_IN":
+		return nil, ErrTicketAlreadyUsed
+	case "REFUNDED", "REFUND_REQUESTED", "CANCELLED":
+		return nil, ErrTicketInvalid
+	case "ISSUED", "VERIFIED":
+	default:
+		return nil, ErrTicketNotIssued
+	}
+
+	_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN' WHERE id = $1", record.ID)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memperbarui status check-in tiket: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("gagal menyelesaikan transaksi check-in tiket: %w", err)
+	}
+
+	record.Status = "CHECKED_IN"
+	return &record, nil
+}
+
 func (r *orderRepository) GetUserOrders(ctx context.Context, userID, userEmail, statusFilter string) ([]models.OrderRecord, error) {
 	baseQuery := `
 		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
@@ -449,22 +510,11 @@ func (r *orderRepository) GetUserDashboardSummary(ctx context.Context, userID, u
 	var summary models.UserDashboardSummary
 
 	err := r.db.QueryRowContext(ctx, `
-		WITH user_orders AS (
-			SELECT status, quantity
-			FROM orders
-			WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2))
-		),
-		user_refunds AS (
-			SELECT status
-			FROM refund_requests
-			WHERE LOWER(user_email) = LOWER($2)
-		)
 		SELECT
-			COALESCE(SUM(CASE WHEN UPPER(status) != 'REFUNDED' THEN quantity ELSE 0 END), 0),
-			COALESCE(COUNT(CASE WHEN UPPER(status) = 'ISSUED' THEN 1 END), 0),
-			COALESCE(COUNT(CASE WHEN UPPER(status) = 'CHECKED_IN' THEN 1 END), 0),
-			COALESCE((SELECT COUNT(*) FROM user_refunds WHERE UPPER(status) = 'PENDING'), 0)
-		FROM user_orders
+			COALESCE((SELECT SUM(quantity) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) != 'REFUNDED'), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) IN ('ISSUED', 'VERIFIED')), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) = 'CHECKED_IN'), 0),
+			COALESCE((SELECT COUNT(*) FROM refund_requests WHERE LOWER(user_email) = LOWER($2) AND UPPER(status) = 'PENDING'), 0)
 	`, userID, userEmail).Scan(
 		&summary.TotalTicketsBought,
 		&summary.UpcomingEventsCount,

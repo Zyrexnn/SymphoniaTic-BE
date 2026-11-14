@@ -168,6 +168,37 @@ func (c *AdminController) UploadImage(ctx *fiber.Ctx) error {
 		})
 	}
 
+	const maxFileSize = 5 * 1024 * 1024
+	if uploadedFile.Size > maxFileSize {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Ukuran file terlalu besar. Maksimal ukuran gambar adalah 5MB.",
+		})
+	}
+
+	// Validasi whitelist ekstensi dan tipe konten untuk mencegah eksekusi skrip berbahaya
+	fileExtension := strings.ToLower(filepath.Ext(uploadedFile.Filename))
+	allowedExtensions := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".webp": true,
+	}
+	if !allowedExtensions[fileExtension] {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format file tidak didukung. Harap unggah gambar JPG, JPEG, PNG, atau WEBP.",
+		})
+	}
+
+	contentType := strings.ToLower(uploadedFile.Header.Get("Content-Type"))
+	if contentType != "" && contentType != "application/octet-stream" && !strings.HasPrefix(contentType, "image/") {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Tipe konten file tidak valid. Harap unggah berkas gambar yang sah.",
+		})
+	}
+
 	uploadsDir := filepath.Clean("uploads")
 	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
@@ -177,7 +208,6 @@ func (c *AdminController) UploadImage(ctx *fiber.Ctx) error {
 		})
 	}
 
-	fileExtension := filepath.Ext(uploadedFile.Filename)
 	filename := fmt.Sprintf("%d%s", time.Now().UnixNano(), fileExtension)
 	savePath := filepath.Clean(filepath.Join(uploadsDir, filename))
 

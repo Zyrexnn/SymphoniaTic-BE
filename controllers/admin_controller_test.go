@@ -163,6 +163,28 @@ func TestAdminController_AdminLogin(t *testing.T) {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("Gagal (400 Bad Request) saat ekstensi file tidak diizinkan", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{}
+		app := setupAdminControllerTest(mockRepo, nil)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("image", "malicious_script.html")
+		_, _ = part.Write([]byte("<script>alert(1)</script>"))
+		_ = writer.Close()
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request untuk file HTML, dapat %d", resp.StatusCode)
+		}
+	})
 }
 
 func TestAdminController_GetAdminDashboardMetrics(t *testing.T) {
@@ -306,6 +328,28 @@ func TestAdminController_UploadImage(t *testing.T) {
 
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat ekstensi file tidak diizinkan", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{}
+		app := setupAdminControllerTest(mockRepo, nil)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("image", "malicious_script.html")
+		_, _ = part.Write([]byte("<script>alert(1)</script>"))
+		_ = writer.Close()
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/upload", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request untuk file HTML, dapat %d", resp.StatusCode)
 		}
 	})
 }

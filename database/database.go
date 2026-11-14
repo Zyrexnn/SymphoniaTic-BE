@@ -93,7 +93,7 @@ func initSchema() {
 		user_name VARCHAR(255) NOT NULL,
 		user_email VARCHAR(255) NOT NULL,
 		qr_code VARCHAR(255) NOT NULL,
-		status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED',
+		status VARCHAR(50) NOT NULL DEFAULT 'ISSUED',
 		payment_method VARCHAR(50) DEFAULT 'SANDBOX_PAYMENT',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
@@ -129,9 +129,12 @@ func initSchema() {
 		admin_note TEXT DEFAULT '',
 		otp_code VARCHAR(10) DEFAULT NULL,
 		otp_expires_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+		attempts INT DEFAULT 0,
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
+
+	ALTER TABLE refund_requests ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
 
 	CREATE INDEX IF NOT EXISTS idx_refund_requests_order_id ON refund_requests(order_id);
 	CREATE INDEX IF NOT EXISTS idx_refund_requests_order_code ON refund_requests(order_code);

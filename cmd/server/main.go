@@ -140,9 +140,10 @@ func main() {
 	adminProtected.Put("/categories/:id", categoryCtrl.UpdateTicketCategory)
 	adminProtected.Delete("/categories/:id", categoryCtrl.DeleteTicketCategory)
 
-	// Admin Orders Management Routes
+	// Admin Orders & Tickets Management Routes
 	adminProtected.Get("/orders", orderCtrl.GetAllOrders)
 	adminProtected.Patch("/orders/:id/status", orderCtrl.UpdateOrderStatus)
+	adminProtected.Post("/tickets/checkin", ticketCtrl.CheckInTicket)
 
 	// Admin Refund Management Routes
 	adminProtected.Get("/refunds", refundCtrl.AdminGetAllRefunds)

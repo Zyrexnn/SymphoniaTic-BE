@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS ticket_categories (
 CREATE TABLE IF NOT EXISTS orders (
     id VARCHAR(64) PRIMARY KEY,
     order_code VARCHAR(100) UNIQUE NOT NULL,
+    user_id VARCHAR(64) DEFAULT '',
     event_id VARCHAR(64) NOT NULL REFERENCES events(id),
     event_title VARCHAR(255) NOT NULL,
     artist VARCHAR(255) NOT NULL,
@@ -57,9 +58,9 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. INDEXES
 CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
 CREATE INDEX IF NOT EXISTS idx_ticket_categories_event_id ON ticket_categories(event_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_order_code ON orders(order_code);
 CREATE INDEX IF NOT EXISTS idx_orders_user_email ON orders(user_email);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS refund_requests (
     admin_note TEXT DEFAULT '',
     otp_code VARCHAR(10) DEFAULT NULL,
     otp_expires_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+    attempts INT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -86,8 +88,34 @@ CREATE TABLE IF NOT EXISTS refund_requests (
 CREATE INDEX IF NOT EXISTS idx_refund_requests_order_code ON refund_requests(order_code);
 CREATE INDEX IF NOT EXISTS idx_refund_requests_status ON refund_requests(status);
 
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(64) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) DEFAULT '',
+    password_hash VARCHAR(255) DEFAULT '',
+    role VARCHAR(50) DEFAULT 'USER',
+    is_verified BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS auth_otps (
+    id VARCHAR(64) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    otp_code VARCHAR(10) NOT NULL,
+    purpose VARCHAR(50) NOT NULL,
+    attempts INT DEFAULT 0,
+    is_used BOOLEAN DEFAULT FALSE,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_auth_otps_email_purpose ON auth_otps(email, purpose);
+
 -- 3. RESET & DATA SEEDING
-TRUNCATE TABLE orders, ticket_categories, events CASCADE;
+TRUNCATE TABLE orders, ticket_categories, events, refund_requests, auth_otps CASCADE;
 
 INSERT INTO events (id, title, subtitle, artist, conductor, venue, address, date, time, open_gate, category, category_badge_color, image, audio_url, organizer, description, rundown)
 VALUES 

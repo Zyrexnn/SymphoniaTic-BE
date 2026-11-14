@@ -127,6 +127,12 @@ func (c *RefundController) RequestRefundOTP(ctx *fiber.Ctx) error {
 
 	err = c.repo.RequestRefundOTP(ctx.Context(), targetOrder.OrderCode, targetOrder.UserEmail, otpCode, expiresAt, targetOrder.TotalPrice, targetOrder.ID)
 	if err != nil {
+		if errors.Is(err, repositories.ErrOTPCooldown) {
+			return ctx.Status(fiber.StatusTooManyRequests).JSON(models.APIResponse{
+				Success: false,
+				Message: "Mohon tunggu 60 detik sebelum meminta kode OTP refund baru",
+			})
+		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal membuat kode verifikasi OTP",
@@ -196,6 +202,19 @@ func (c *RefundController) SubmitRefund(ctx *fiber.Ctx) error {
 			return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
 				Success: false,
 				Message: "Email tidak cocok dengan permohonan refund",
+			})
+		}
+		if errors.Is(err, repositories.ErrOTPMaxExceed) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Batas percobaan verifikasi OTP telah terlampaui. Silakan minta kode OTP baru",
+			})
+		}
+		var errWrongCode *repositories.ErrOTPWrongCode
+		if errors.As(err, &errWrongCode) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: fmt.Sprintf("Kode OTP salah. Sisa percobaan: %d", errWrongCode.RemainingAttempts),
 			})
 		}
 		if errors.Is(err, repositories.ErrOTPInvalid) {

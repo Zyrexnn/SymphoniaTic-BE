@@ -157,6 +157,24 @@ func TestMockOrderRepository(t *testing.T) {
 	if err != nil || summary.TotalTicketsBought != 10 {
 		t.Fatalf("gagal mengeksekusi mock GetUserDashboardSummaryFunc")
 	}
+
+	mockRepo.CheckInTicketFunc = func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+		if orderCode == "SYM-USED" {
+			return nil, ErrTicketAlreadyUsed
+		}
+		return &models.OrderRecord{
+			OrderCode: orderCode,
+			Status:    "CHECKED_IN",
+		}, nil
+	}
+	checkedInOrder, err := mockRepo.CheckInTicket(ctx, "SYM-123456")
+	if err != nil || checkedInOrder.Status != "CHECKED_IN" {
+		t.Fatalf("gagal mengeksekusi mock CheckInTicketFunc: %v", err)
+	}
+	_, err = mockRepo.CheckInTicket(ctx, "SYM-USED")
+	if !errors.Is(err, ErrTicketAlreadyUsed) {
+		t.Fatalf("ekspektasi ErrTicketAlreadyUsed, didapat: %v", err)
+	}
 }
 
 func TestMockRefundRepository(t *testing.T) {

@@ -68,11 +68,17 @@ func ValidateUserToken(tokenString string) (*JWTClaims, error) {
 }
 
 // GeneratePasswordResetToken generates a short-lived reset token (valid for 15 minutes).
-func GeneratePasswordResetToken(email string) (string, error) {
+func GeneratePasswordResetToken(email string, tokenIDs ...string) (string, error) {
+	tokenID := ""
+	if len(tokenIDs) > 0 {
+		tokenID = tokenIDs[0]
+	}
+
 	claims := ResetClaims{
 		Email:   email,
 		Purpose: "RESET_PASSWORD",
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        tokenID,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},

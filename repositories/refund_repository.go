@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -22,13 +23,20 @@ func NewRefundRepository(db *sql.DB) RefundRepository {
 
 func (r *refundRepository) RequestRefundOTP(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error {
 	var existingRefundID string
-	err := r.db.QueryRowContext(ctx, "SELECT id FROM refund_requests WHERE order_id = $1", orderID).Scan(&existingRefundID)
+	var inCooldown bool
+
+	// Memeriksa keberadaan permohonan refund sebelumnya serta mengecek cooldown 60 detik untuk mencegah spam OTP
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, COALESCE(updated_at > NOW() - INTERVAL '60 seconds', false) AS in_cooldown
+		FROM refund_requests
+		WHERE order_id = $1
+	`, orderID).Scan(&existingRefundID, &inCooldown)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		refundID := "rf-" + uuid.New().String()
 		_, err = r.db.ExecContext(ctx, `
-			INSERT INTO refund_requests (id, order_id, order_code, user_email, bank_name, account_number, account_holder, reason, refund_amount, status, otp_code, otp_expires_at)
-			VALUES ($1, $2, $3, $4, '', '', '', '', $5, 'OTP_SENT', $6, $7)
+			INSERT INTO refund_requests (id, order_id, order_code, user_email, bank_name, account_number, account_holder, reason, refund_amount, status, otp_code, otp_expires_at, attempts, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, '', '', '', '', $5, 'OTP_SENT', $6, $7, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		`, refundID, orderID, orderCode, userEmail, refundAmount, otpCode, expiresAt)
 		if err != nil {
 			return fmt.Errorf("gagal membuat permintaan refund baru: %w", err)
@@ -38,9 +46,14 @@ func (r *refundRepository) RequestRefundOTP(ctx context.Context, orderCode, user
 		return fmt.Errorf("gagal memeriksa data refund: %w", err)
 	}
 
+	if inCooldown {
+		return ErrOTPCooldown
+	}
+
+	// Me-reset hitungan percobaan ke 0 dan menerbitkan OTP baru beserta waktu kedaluwarsa baru
 	_, err = r.db.ExecContext(ctx, `
 		UPDATE refund_requests
-		SET otp_code = $1, otp_expires_at = $2, updated_at = CURRENT_TIMESTAMP
+		SET otp_code = $1, otp_expires_at = $2, attempts = 0, status = 'OTP_SENT', updated_at = CURRENT_TIMESTAMP
 		WHERE id = $3
 	`, otpCode, expiresAt, existingRefundID)
 	if err != nil {
@@ -123,33 +136,77 @@ func (r *refundRepository) GetRefundStatus(ctx context.Context, orderCode, userE
 }
 
 func (r *refundRepository) SubmitRefund(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error) {
-	record, storedOTP, expiresAt, err := r.GetRefundWithOTP(ctx, input.OrderCode)
-	if err != nil {
-		return nil, err
-	}
-
-	if !strings.EqualFold(record.UserEmail, input.UserEmail) {
-		return nil, ErrUnauthorized
-	}
-
-	if storedOTP != input.OTPCode {
-		return nil, ErrOTPInvalid
-	}
-
-	if time.Now().After(expiresAt) {
-		return nil, ErrOTPInvalid
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("gagal memulai transaksi pengajuan refund: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Menghapus nilai otp_code setelah validasi sukses untuk mencegah replay attack
+	var record models.RefundRequestRecord
+	var storedOTP string
+	var expiresAt time.Time
+	var attempts int
+
+	// Mengunci baris refund_requests dengan FOR UPDATE untuk memastikan konsistensi counter percobaan (attempts) dan validasi OTP
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, order_id, order_code, user_email, status, 
+		       COALESCE(otp_code, ''), COALESCE(otp_expires_at, '1970-01-01'::timestamptz), COALESCE(attempts, 0)
+		FROM refund_requests
+		WHERE UPPER(order_code) = UPPER($1)
+		FOR UPDATE
+	`, input.OrderCode).Scan(&record.ID, &record.OrderID, &record.OrderCode, &record.UserEmail, &record.Status, &storedOTP, &expiresAt, &attempts)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("gagal mengambil data refund dan OTP: %w", err)
+	}
+
+	if !strings.EqualFold(record.UserEmail, input.UserEmail) {
+		return nil, ErrUnauthorized
+	}
+
+	// Membatasi toleransi kesalahan OTP maksimal 5 kali untuk mencegah serangan brute force
+	if attempts >= 5 {
+		_, _ = tx.ExecContext(ctx, `
+			UPDATE refund_requests
+			SET otp_code = NULL, updated_at = CURRENT_TIMESTAMP
+			WHERE id = $1
+		`, record.ID)
+		_ = tx.Commit()
+		return nil, ErrOTPMaxExceed
+	}
+
+	if storedOTP == "" || time.Now().After(expiresAt) {
+		return nil, ErrOTPInvalid
+	}
+
+	if storedOTP != input.OTPCode {
+		newAttempts := attempts + 1
+		remaining := 5 - newAttempts
+		if remaining <= 0 {
+			_, _ = tx.ExecContext(ctx, `
+				UPDATE refund_requests
+				SET attempts = $1, otp_code = NULL, updated_at = CURRENT_TIMESTAMP
+				WHERE id = $2
+			`, newAttempts, record.ID)
+			_ = tx.Commit()
+			return nil, ErrOTPMaxExceed
+		}
+
+		_, _ = tx.ExecContext(ctx, `
+			UPDATE refund_requests
+			SET attempts = $1, updated_at = CURRENT_TIMESTAMP
+			WHERE id = $2
+		`, newAttempts, record.ID)
+		_ = tx.Commit()
+		return nil, &ErrOTPWrongCode{RemainingAttempts: remaining}
+	}
+
+	// Menghapus nilai otp_code dan mereset attempts ke 0 setelah verifikasi berhasil guna mencegah penggunaan berulang
 	_, err = tx.ExecContext(ctx, `
 		UPDATE refund_requests
-		SET bank_name = $1, account_number = $2, account_holder = $3, reason = $4, status = 'PENDING', otp_code = NULL, updated_at = CURRENT_TIMESTAMP
+		SET bank_name = $1, account_number = $2, account_holder = $3, reason = $4, status = 'PENDING', otp_code = NULL, attempts = 0, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $5
 	`, input.BankName, input.AccountNumber, input.AccountHolder, input.Reason, record.ID)
 	if err != nil {
@@ -176,7 +233,7 @@ func (r *refundRepository) SubmitRefund(ctx context.Context, input *models.Submi
 	record.Status = "PENDING"
 	record.UpdatedAt = time.Now()
 
-	return record, nil
+	return &record, nil
 }
 
 func (r *refundRepository) GetAllRefunds(ctx context.Context) ([]models.RefundRequestRecord, error) {
@@ -259,28 +316,30 @@ func (r *refundRepository) UpdateRefundStatus(ctx context.Context, refundID, new
 		return nil, fmt.Errorf("status refund tidak valid: %s", newStatus)
 	}
 
-	var orderID, orderCode, userEmail, categoryName, eventID string
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memulai transaksi pembaruan status refund: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Mengunci baris refund_requests dan orders menggunakan FOR UPDATE untuk mencegah modifikasi konkruen status refund dan penggandaan kuota
+	var orderID, orderCode, userEmail, currentStatus, categoryName, eventID string
 	var quantity int
 	var amount float64
 
-	err := r.db.QueryRowContext(ctx, `
-		SELECT r.order_id, r.order_code, r.user_email, r.refund_amount, o.event_id, o.category_name, o.quantity
+	err = tx.QueryRowContext(ctx, `
+		SELECT r.order_id, r.order_code, r.user_email, r.refund_amount, r.status, o.event_id, o.category_name, o.quantity
 		FROM refund_requests r
 		JOIN orders o ON o.id = r.order_id
 		WHERE r.id = $1
-	`, refundID).Scan(&orderID, &orderCode, &userEmail, &amount, &eventID, &categoryName, &quantity)
+		FOR UPDATE OF r, o
+	`, refundID).Scan(&orderID, &orderCode, &userEmail, &amount, &currentStatus, &eventID, &categoryName, &quantity)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("gagal mengambil rincian refund: %w", err)
 	}
-
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("gagal memulai transaksi pembaruan status refund: %w", err)
-	}
-	defer tx.Rollback()
 
 	_, err = tx.ExecContext(ctx, `
 		UPDATE refund_requests
@@ -297,20 +356,26 @@ func (r *refundRepository) UpdateRefundStatus(ctx context.Context, refundID, new
 			return nil, fmt.Errorf("gagal memperbarui status pesanan menjadi REFUNDED: %w", err)
 		}
 
-		// Mengembalikan kuota tiket secara atomic ke kategori terkait saat refund disetujui
-		_, err = tx.ExecContext(ctx, `
-			UPDATE ticket_categories
-			SET remaining_quota = remaining_quota + $1
-			WHERE event_id = $2 AND name = $3
-		`, quantity, eventID, categoryName)
-		if err != nil {
-			return nil, fmt.Errorf("gagal mengembalikan kuota tiket: %w", err)
+		// Pengembalian kuota tiket hanya dilakukan jika status refund bertransisi dari PENDING guna mencegah bug penggandaan kuota saat status diubah dari APPROVED ke COMPLETED
+		if currentStatus == "PENDING" {
+			res, err := tx.ExecContext(ctx, `
+				UPDATE ticket_categories
+				SET remaining_quota = remaining_quota + $1
+				WHERE event_id = $2 AND name = $3
+			`, quantity, eventID, categoryName)
+			if err != nil {
+				return nil, fmt.Errorf("gagal mengembalikan kuota tiket: %w", err)
+			}
+			rowsAffected, err := res.RowsAffected()
+			if err == nil && rowsAffected == 0 {
+				log.Printf("Peringatan: Kategori tiket %s pada event %s tidak ditemukan saat pengembalian kuota refund %s", categoryName, eventID, refundID)
+			}
 		}
 	} else if normalizedStatus == "REJECTED" {
-		// Mengembalikan status pesanan ke VERIFIED jika permohonan ditolak
-		_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'VERIFIED' WHERE id = $1", orderID)
+		// Mengembalikan status pesanan ke ISSUED jika permohonan ditolak agar tiket tetap valid dan muncul di dashboard
+		_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'ISSUED' WHERE id = $1", orderID)
 		if err != nil {
-			return nil, fmt.Errorf("gagal mengembalikan status pesanan ke VERIFIED: %w", err)
+			return nil, fmt.Errorf("gagal mengembalikan status pesanan ke ISSUED: %w", err)
 		}
 	}
 
@@ -319,15 +384,15 @@ func (r *refundRepository) UpdateRefundStatus(ctx context.Context, refundID, new
 	}
 
 	return &models.RefundRequestRecord{
-		ID:            refundID,
-		OrderID:       orderID,
-		OrderCode:     orderCode,
-		UserEmail:     userEmail,
-		RefundAmount:  amount,
-		Status:        normalizedStatus,
-		AdminNote:     adminNote,
-		CategoryName:  categoryName,
-		Quantity:      quantity,
-		UpdatedAt:     time.Now(),
+		ID:           refundID,
+		OrderID:      orderID,
+		OrderCode:    orderCode,
+		UserEmail:    userEmail,
+		RefundAmount: amount,
+		Status:       normalizedStatus,
+		AdminNote:    adminNote,
+		CategoryName: categoryName,
+		Quantity:     quantity,
+		UpdatedAt:    time.Now(),
 	}, nil
 }
