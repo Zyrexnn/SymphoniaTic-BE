@@ -189,6 +189,47 @@ func TestRefundController_RequestRefundOTP(t *testing.T) {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("Gagal (429 Too Many Requests) saat permohonan OTP masih dalam masa cooldown 60 detik", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					OrderCode: "SYM-123456",
+					UserEmail: "user@example.com",
+					Status:    "ISSUED",
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{
+			RequestRefundOTPFunc: func(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error {
+				return repositories.ErrOTPCooldown
+			},
+		}
+
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		payload := models.RequestRefundOTPInput{
+			OrderCode: "SYM-123456",
+			UserEmail: "user@example.com",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/refunds/request-otp", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("Status tidak sesuai: ekspektasi 429 Too Many Requests, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Mohon tunggu 60 detik sebelum meminta kode OTP refund baru" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
 }
 
 func TestRefundController_SubmitRefund(t *testing.T) {
@@ -289,6 +330,82 @@ func TestRefundController_SubmitRefund(t *testing.T) {
 
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat batas percobaan verifikasi OTP terlampaui", func(t *testing.T) {
+		mockRefundRepo := &repositories.MockRefundRepository{
+			SubmitRefundFunc: func(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error) {
+				return nil, repositories.ErrOTPMaxExceed
+			},
+		}
+		mockOrderRepo := &repositories.MockOrderRepository{}
+
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		payload := models.SubmitRefundInput{
+			OrderCode:     "SYM-123456",
+			UserEmail:     "user@example.com",
+			OTPCode:       "111111",
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Budi Santoso",
+			Reason:        "Alasan pembatalan",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/refunds/submit", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Batas percobaan verifikasi OTP telah terlampaui. Silakan minta kode OTP baru" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat kode OTP salah dan memberitahu sisa percobaan", func(t *testing.T) {
+		mockRefundRepo := &repositories.MockRefundRepository{
+			SubmitRefundFunc: func(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error) {
+				return nil, &repositories.ErrOTPWrongCode{RemainingAttempts: 3}
+			},
+		}
+		mockOrderRepo := &repositories.MockOrderRepository{}
+
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		payload := models.SubmitRefundInput{
+			OrderCode:     "SYM-123456",
+			UserEmail:     "user@example.com",
+			OTPCode:       "999999",
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Budi Santoso",
+			Reason:        "Alasan pembatalan",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/refunds/submit", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Kode OTP salah. Sisa percobaan: 3" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
 		}
 	})
 }
