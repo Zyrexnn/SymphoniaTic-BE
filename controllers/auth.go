@@ -409,7 +409,16 @@ func VerifyForgotPasswordOTP(ctx *fiber.Ctx) error {
 		return utils.ResponseBadRequest(ctx, "Kode OTP tidak sesuai. "+err.Error())
 	}
 
-	passwordResetToken, err := utils.GeneratePasswordResetToken(forgotPwdVerifyReq.Email)
+	tokenID := "rst-" + uuid.New().String()
+	_, err = database.DB.Exec(`
+		INSERT INTO auth_otps (id, email, otp_code, purpose, attempts, is_used, expires_at)
+		VALUES ($1, $2, $3, 'RESET_TOKEN', 0, FALSE, $4)
+	`, tokenID, forgotPwdVerifyReq.Email, tokenID, time.Now().Add(15*time.Minute))
+	if err != nil {
+		return utils.ResponseInternalError(ctx, "Gagal membuat sesi reset kata sandi.", err)
+	}
+
+	passwordResetToken, err := utils.GeneratePasswordResetToken(forgotPwdVerifyReq.Email, tokenID)
 	if err != nil {
 		return utils.ResponseInternalError(ctx, "Gagal memproses permintaan reset kata sandi.", err)
 	}
@@ -438,6 +447,21 @@ func ResetPassword(ctx *fiber.Ctx) error {
 	tokenClaims, err := utils.ValidatePasswordResetToken(resetPwdReq.ResetToken)
 	if err != nil {
 		return utils.ResponseUnauthorized(ctx, "Token reset kata sandi tidak valid atau telah kedaluwarsa.")
+	}
+
+	// Mencegah replay attack dengan memastikan token reset hanya dapat digunakan satu kali
+	if tokenClaims.ID != "" {
+		res, execErr := database.DB.Exec(`
+			UPDATE auth_otps SET is_used = TRUE 
+			WHERE id = $1 AND purpose = 'RESET_TOKEN' AND is_used = FALSE AND expires_at > NOW()
+		`, tokenClaims.ID)
+		if execErr != nil {
+			return utils.ResponseInternalError(ctx, "Gagal memverifikasi status token reset.", execErr)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return utils.ResponseUnauthorized(ctx, "Token reset kata sandi telah digunakan atau kedaluwarsa.")
+		}
 	}
 
 	newPasswordHash, err := utils.HashPassword(resetPwdReq.NewPassword)
