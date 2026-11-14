@@ -3,20 +3,32 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 )
 
 var (
-	ErrNotFound      = errors.New("data tidak ditemukan")
-	ErrEventClosed   = errors.New("penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai")
-	ErrQuotaExceeded = errors.New("kuota tiket tidak mencukupi")
-	ErrOTPCooldown   = errors.New("mohon tunggu 60 detik sebelum meminta OTP baru")
-	ErrOTPInvalid    = errors.New("kode OTP tidak valid atau telah kedaluwarsa")
-	ErrOTPMaxExceed  = errors.New("batas percobaan OTP telah habis, silakan ajukan OTP baru")
-	ErrUnauthorized  = errors.New("tidak memiliki hak akses")
+	ErrNotFound          = errors.New("data tidak ditemukan")
+	ErrEventClosed       = errors.New("penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai")
+	ErrQuotaExceeded     = errors.New("kuota tiket tidak mencukupi")
+	ErrOTPCooldown       = errors.New("mohon tunggu 60 detik sebelum meminta OTP baru")
+	ErrOTPInvalid        = errors.New("kode OTP tidak valid atau telah kedaluwarsa")
+	ErrOTPMaxExceed      = errors.New("batas percobaan OTP telah habis, silakan ajukan OTP baru")
+	ErrUnauthorized      = errors.New("tidak memiliki hak akses")
+	ErrTicketAlreadyUsed = errors.New("tiket ini sudah pernah digunakan untuk check-in sebelumnya")
+	ErrTicketInvalid     = errors.New("tiket tidak valid karena telah dibatalkan atau di-refund")
+	ErrTicketNotIssued   = errors.New("status tiket tidak valid untuk check-in")
 )
+
+type ErrOTPWrongCode struct {
+	RemainingAttempts int
+}
+
+func (e *ErrOTPWrongCode) Error() string {
+	return fmt.Sprintf("Kode OTP salah. Sisa percobaan: %d", e.RemainingAttempts)
+}
 
 type EventRepository interface {
 	GetAllEvents(ctx context.Context) ([]models.EventItem, error)
@@ -37,6 +49,7 @@ type OrderRepository interface {
 	GetOrderByCode(ctx context.Context, code string) (*models.OrderRecord, error)
 	GetOrderByID(ctx context.Context, id string) (*models.OrderRecord, error)
 	LookupTicketByCode(ctx context.Context, code string) (*models.OrderRecord, error)
+	CheckInTicket(ctx context.Context, orderCode string) (*models.OrderRecord, error)
 	GetUserOrders(ctx context.Context, userID, userEmail, statusFilter string) ([]models.OrderRecord, error)
 	GetUserOrderByCode(ctx context.Context, code, userID, userEmail string) (*models.OrderRecord, error)
 	GetAllOrders(ctx context.Context, searchQuery, statusFilter string) ([]models.OrderRecord, error)

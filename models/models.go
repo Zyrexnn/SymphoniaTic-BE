@@ -136,7 +136,8 @@ type UpdateOrderStatusRequest struct {
 }
 
 type CheckInRequest struct {
-	Code string `json:"code"`
+	Code      string `json:"code"`
+	OrderCode string `json:"orderCode,omitempty"`
 }
 
 // ─── REFUND MODELS ───

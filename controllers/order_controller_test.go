@@ -25,6 +25,7 @@ func setupOrderControllerTest(mockRepo *repositories.MockOrderRepository) *fiber
 	api.Get("/admin/orders", orderCtrl.GetAllOrders)
 	api.Patch("/admin/orders/:id/status", orderCtrl.UpdateOrderStatus)
 	api.Get("/tickets/lookup", ticketCtrl.LookupTicketByCode)
+	api.Post("/admin/tickets/checkin", ticketCtrl.CheckInTicket)
 
 	return app
 }
@@ -423,6 +424,153 @@ func TestOrderController_LookupTicketByCode(t *testing.T) {
 		app := setupOrderControllerTest(mockRepo)
 
 		req := httptest.NewRequest("GET", "/api/v1/tickets/lookup", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestTicketController_CheckInTicket(t *testing.T) {
+	t.Run("Sukses (200 OK) saat tiket valid dan status ISSUED", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:        "ord-01",
+					OrderCode: "SYM-987654",
+					Status:    "CHECKED_IN",
+				}, nil
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-987654",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Status tidak sesuai: ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+			t.Fatalf("Gagal mendecode response body: %v", err)
+		}
+		if !apiResp.Success {
+			t.Fatalf("Ekspektasi success bernilai true")
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat tiket sudah pernah digunakan", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrTicketAlreadyUsed
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-ALREADY-USED",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Tiket ini sudah pernah digunakan untuk check-in sebelumnya" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat tiket dibatalkan atau direfund", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrTicketInvalid
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-REFUNDED",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Tiket tidak valid karena telah dibatalkan atau di-refund" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
+
+	t.Run("Gagal (404 Not Found) saat tiket tidak ditemukan", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrNotFound
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-NOTFOUND",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("Status tidak sesuai: ekspektasi 404 Not Found, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat kode tiket kosong", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{}
+		app := setupOrderControllerTest(mockRepo)
+
+		payload := models.CheckInRequest{
+			Code: "",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
 		resp, err := app.Test(req, -1)
 		if err != nil {
 			t.Fatalf("Gagal mengirim HTTP request: %v", err)
