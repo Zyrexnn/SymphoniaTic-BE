@@ -1,7 +1,9 @@
 package services
 
 import (
+	"encoding/base64"
 	"fmt"
+	"html/template"
 	"log"
 	"net/smtp"
 	"os"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/Zyrexnn/SymphoniaTic-be/config"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // EmailJob merepresentasikan muatan pekerjaan pengiriman email asinkron
@@ -177,10 +180,27 @@ func sendEmailViaSMTP(job EmailJob) {
 
 // SendETicketEmail mengirimkan email E-Ticket berformat HTML secara asinkron melalui antrean worker
 func SendETicketEmail(order models.OrderRecord) {
+	qrPayload := strings.TrimSpace(order.QRCode)
+	if qrPayload == "" {
+		qrPayload = strings.TrimSpace(order.OrderCode)
+	}
+
+	var qrDataURI template.URL
+	if qrPayload != "" {
+		pngBytes, err := qrcode.Encode(qrPayload, qrcode.Medium, 220)
+		if err == nil {
+			qrDataURI = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes))
+		} else {
+			log.Printf("Peringatan: Gagal membuat QR code untuk pesanan %s: %v\n", order.OrderCode, err)
+		}
+	}
+
 	data := map[string]interface{}{
 		"UserName":     order.UserName,
 		"EventTitle":   order.EventTitle,
 		"OrderCode":    order.OrderCode,
+		"QRCode":       qrPayload,
+		"QRDataURI":    qrDataURI,
 		"Artist":       order.Artist,
 		"Venue":        order.Venue,
 		"Date":         order.Date,

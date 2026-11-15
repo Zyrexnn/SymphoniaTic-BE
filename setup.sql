@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS auth_otps (
     id VARCHAR(64) PRIMARY KEY,
     email VARCHAR(255) NOT NULL,
-    otp_code VARCHAR(10) NOT NULL,
+    otp_code VARCHAR(64) NOT NULL,
     purpose VARCHAR(50) NOT NULL,
     attempts INT DEFAULT 0,
     is_used BOOLEAN DEFAULT FALSE,

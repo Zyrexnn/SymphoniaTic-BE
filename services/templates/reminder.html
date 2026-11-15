@@ -4,34 +4,47 @@
     <meta charset="UTF-8">
     <title>Pengingat H-1 Konser SymphoniaTic</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; }
-        .header { background: linear-gradient(135deg, #312e81 0%, #4338ca 100%); padding: 25px 20px; text-align: center; }
-        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; }
-        .content { padding: 25px; }
-        .box { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 15px; margin: 15px 0; }
-        .btn { display: inline-block; background: #6366f1; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 10px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0C0D12; color: #FFFFFF; margin: 0; padding: 24px 12px; }
+        .container { max-width: 580px; margin: 0 auto; background: #14161F; border-radius: 12px; border: 1px solid #272A38; overflow: hidden; }
+        .header { background: #14161F; padding: 28px 24px; text-align: center; border-bottom: 1px solid #272A38; }
+        .header h1 { margin: 0; color: #FFFFFF; font-size: 18px; font-weight: 600; letter-spacing: 2.5px; }
+        .header p { margin: 6px 0 0 0; color: #A1A1AA; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+        .content { padding: 28px 24px; }
+        .greeting { font-size: 14px; color: #FFFFFF; margin-bottom: 10px; }
+        .desc { font-size: 13px; color: #A1A1AA; line-height: 1.6; margin: 0 0 20px 0; }
+        .box { background: #0C0D12; border: 1px solid #272A38; border-radius: 10px; padding: 20px; margin: 20px 0; }
+        .venue-title { margin: 0; font-size: 12px; font-weight: 600; color: #FFFFFF; text-transform: uppercase; letter-spacing: 1px; }
+        .venue-name { margin: 6px 0 16px 0; font-size: 14px; color: #A1A1AA; line-height: 1.5; }
+        .btn-wrapper { text-align: center; margin-top: 10px; }
+        .btn { display: inline-block; background-color: #FFFFFF; color: #0C0D12; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+        .notice { font-size: 12px; color: #71717A; text-align: center; line-height: 1.5; margin-top: 24px; }
+        .footer { background: #0C0D12; padding: 18px 20px; text-align: center; font-size: 11px; color: #71717A; border-top: 1px solid #272A38; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>PENGINGAT KONSER H-1</h1>
-            <p style="margin: 5px 0 0 0; color: #cbd5e1;">Besok adalah Hari Pertunjukan!</p>
+            <p>Besok Adalah Hari Pertunjukan</p>
         </div>
         <div class="content">
-            <p>Halo <strong>{{.UserName}}</strong>,</p>
-            <p>Konser <strong>{{.EventTitle}}</strong> yang Anda pesan ({{.OrderCode}}) akan dilaksanakan besok pada <strong>{{.Date}}</strong>.</p>
+            <div class="greeting">Halo <strong>{{.UserName}}</strong>,</div>
+            <p class="desc">Pertunjukan simfoni <strong>{{.EventTitle}}</strong> yang Anda pesan dengan kode invoice <strong style="color: #FFFFFF; font-family: monospace;">{{.OrderCode}}</strong> akan dilaksanakan besok pada <strong>{{.Date}}</strong>.</p>
             
             <div class="box">
-                <p style="margin:0; font-weight:bold; color:#38bdf8;">📍 Petunjuk Lokasi &amp; Venue:</p>
-                <p style="margin:5px 0 0 0; color:#f8fafc;">{{.Venue}}{{if .Address}} ({{.Address}}){{end}}</p>
-                <a href="{{.MapLink}}" class="btn" target="_blank">Buka Petunjuk Peta Google Maps</a>
+                <p class="venue-title">Lokasi &amp; Panduan Venue:</p>
+                <p class="venue-name"><strong>{{.Venue}}</strong>{{if .Address}}<br/><span style="font-size: 12px; color: #71717A;">{{.Address}}</span>{{end}}</p>
+                <div class="btn-wrapper">
+                    <a href="{{.MapLink}}" class="btn" target="_blank" rel="noopener noreferrer">Buka Petunjuk Peta Google Maps</a>
+                </div>
             </div>
 
-            <p style="font-size:13px; color:#94a3b8; text-align:center;">
-                Pastikan Anda menyiapkan QR Code E-Ticket pada smartphone Anda untuk proses registrasi di Open Gate. Sampai jumpa di konser!
+            <p class="notice">
+                Pastikan Anda telah menyiapkan E-Ticket resmi pada smartphone Anda untuk proses verifikasi di Open Gate. Sampai jumpa di konser!
             </p>
+        </div>
+        <div class="footer">
+            &copy; 2026 SymphoniaTic Concert Production. Seluruh Hak Cipta Dilindungi.
         </div>
     </div>
 </body>

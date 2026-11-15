@@ -4,36 +4,41 @@
     <meta charset="UTF-8">
     <title>E-Ticket SymphoniaTic</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 30px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
-        .header h1 { margin: 0; color: #fbbf24; font-size: 24px; letter-spacing: 2px; }
-        .header p { margin: 5px 0 0 0; color: #94a3b8; font-size: 14px; }
-        .content { padding: 30px 25px; }
-        .ticket-box { background: #0f172a; border: 1px dashed #6366f1; border-radius: 12px; padding: 20px; margin-bottom: 25px; }
-        .ticket-code { font-size: 22px; font-weight: bold; color: #38bdf8; text-align: center; letter-spacing: 3px; margin-bottom: 15px; }
-        .detail-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }
-        .label { color: #94a3b8; }
-        .value { color: #f8fafc; font-weight: 600; text-align: right; }
-        .qr-section { text-align: center; margin: 25px 0; background: #ffffff; padding: 15px; border-radius: 12px; display: inline-block; }
-        .qr-section img { max-width: 160px; height: auto; }
-        .footer { background: #090d16; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
-        .badge { background: #059669; color: #ffffff; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0C0D12; color: #FFFFFF; margin: 0; padding: 24px 12px; }
+        .container { max-width: 580px; margin: 0 auto; background: #14161F; border-radius: 12px; border: 1px solid #272A38; overflow: hidden; }
+        .header { background: #14161F; padding: 28px 24px; text-align: center; border-bottom: 1px solid #272A38; }
+        .header h1 { margin: 0; color: #FFFFFF; font-size: 20px; font-weight: 600; letter-spacing: 3px; }
+        .header p { margin: 6px 0 0 0; color: #A1A1AA; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+        .content { padding: 28px 24px; }
+        .greeting { font-size: 14px; color: #FFFFFF; margin-bottom: 12px; }
+        .desc { font-size: 13px; color: #A1A1AA; line-height: 1.6; margin: 0 0 24px 0; }
+        .ticket-box { background: #0C0D12; border: 1px solid #272A38; border-radius: 10px; padding: 20px; margin-bottom: 24px; }
+        .ticket-code { font-size: 20px; font-weight: 700; color: #FFFFFF; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-align: center; letter-spacing: 2px; margin-bottom: 12px; }
+        .badge { display: inline-block; background: rgba(255, 255, 255, 0.1); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.25); padding: 4px 12px; border-radius: 6px; font-size: 11px; font-family: ui-monospace, monospace; letter-spacing: 1px; }
+        .detail-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; border-bottom: 1px solid #1D202D; padding-bottom: 8px; }
+        .label { color: #A1A1AA; }
+        .value { color: #FFFFFF; font-weight: 500; text-align: right; }
+        .qr-card { text-align: center; margin: 24px 0 16px 0; }
+        .qr-wrapper { background: #FFFFFF; padding: 14px; border-radius: 8px; display: inline-block; }
+        .qr-wrapper img { width: 160px; height: 160px; display: block; margin: 0 auto; }
+        .qr-tip { color: #71717A; font-size: 11px; margin-top: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .notice { font-size: 12px; color: #71717A; text-align: center; line-height: 1.5; margin-top: 20px; }
+        .footer { background: #0C0D12; padding: 20px 24px; text-align: center; font-size: 11px; color: #71717A; border-top: 1px solid #272A38; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>SYMPHONIATIC</h1>
-            <p>E-Ticket Resmi Konser &amp; Pertunjukan</p>
+            <p>E-Ticket Resmi Pertunjukan Simfoni</p>
         </div>
         <div class="content">
-            <p>Halo <strong>{{.UserName}}</strong>,</p>
-            <p>Pembayaran transaksi Anda telah terverifikasi. Berikut adalah e-ticket resmi Anda untuk menyaksikan pertunjukan <strong>{{.EventTitle}}</strong>.</p>
+            <div class="greeting">Halo <strong>{{.UserName}}</strong>,</div>
+            <p class="desc">Pembayaran transaksi Anda telah terverifikasi. Berikut adalah e-ticket resmi Anda untuk menyaksikan pertunjukan <strong>{{.EventTitle}}</strong>.</p>
             
             <div class="ticket-box">
                 <div class="ticket-code">{{.OrderCode}}</div>
-                <div style="text-align: center; margin-bottom: 15px;">
+                <div style="text-align: center; margin-bottom: 16px;">
                     <span class="badge">STATUS: ISSUED</span>
                 </div>
                 
@@ -61,26 +66,30 @@
                     <span class="label">Jumlah Tiket:</span>
                     <span class="value">{{.Quantity}} Tiket</span>
                 </div>
-                <div class="detail-row" style="border-bottom: none;">
+                <div class="detail-row" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
                     <span class="label">Total Bayar:</span>
-                    <span class="value" style="color: #fbbf24;">Rp {{formatNumber .TotalPrice}}</span>
+                    <span class="value" style="font-family: ui-monospace, monospace; color: #FFFFFF; font-weight: 700;">Rp {{formatNumber .TotalPrice}}</span>
                 </div>
             </div>
 
-            <div style="text-align: center;">
-                <div class="qr-section">
+            <div class="qr-card">
+                <div class="qr-wrapper">
+                    {{if .QRDataURI}}
+                    <img src="{{safeURL .QRDataURI}}" alt="QR Code E-Ticket" />
+                    {{else}}
                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&amp;data={{.OrderCode}}" alt="QR Code E-Ticket" />
-                    <div style="color: #000; font-size: 11px; margin-top: 5px; font-weight: bold;">Pindai QR ini pada scanner gate masuk</div>
+                    {{end}}
                 </div>
+                <div class="qr-tip">Pindai QR ini pada scanner gate masuk venue</div>
             </div>
 
-            <p style="font-size: 13px; color: #94a3b8; text-align: center;">
-                Harap simpan email ini atau unduh kode QR di atas untuk verifikasi di lokasi konser.
+            <p class="notice">
+                Harap simpan email ini atau unduh E-Ticket melalui website SymphoniaTic untuk ditunjukkan kepada petugas gate masuk.
             </p>
         </div>
         <div class="footer">
             &copy; 2026 SymphoniaTic. Seluruh Hak Cipta Dilindungi.<br/>
-            Email dikirim otomatis oleh Sistem SymphoniaTic.
+            Email ini dikirimkan secara otomatis oleh sistem reservasi SymphoniaTic.
         </div>
     </div>
 </body>

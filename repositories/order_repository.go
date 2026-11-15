@@ -130,14 +130,20 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 }
 
 func (r *orderRepository) GetOrderByCode(ctx context.Context, code string) (*models.OrderRecord, error) {
+	cleanCode := strings.TrimSpace(code)
+	orderCodeOnly := cleanCode
+	if strings.HasPrefix(strings.ToUpper(cleanCode), "QR-") {
+		orderCodeOnly = cleanCode[3:]
+	}
+
 	var record models.OrderRecord
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
 		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
 		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
 		FROM orders
-		WHERE LOWER(order_code) = LOWER($1)
-	`, code).Scan(
+		WHERE LOWER(order_code) = LOWER($1) OR LOWER(order_code) = LOWER($2) OR LOWER(qr_code) = LOWER($3)
+	`, cleanCode, orderCodeOnly, cleanCode).Scan(
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
 		&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,

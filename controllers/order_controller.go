@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
@@ -56,6 +57,11 @@ func (c *OrderController) CreateOrder(ctx *fiber.Ctx) error {
 
 	if (createOrderReq.UserName == "" && authenticatedUserID == "") || createOrderReq.UserEmail == "" || createOrderReq.TicketCategoryID == "" {
 		return utils.ResponseBadRequest(ctx, "Nama, Email, dan Kategori Tiket wajib diisi")
+	}
+
+	createOrderReq.UserEmail = strings.TrimSpace(strings.ToLower(createOrderReq.UserEmail))
+	if _, err := mail.ParseAddress(createOrderReq.UserEmail); err != nil || !strings.Contains(createOrderReq.UserEmail, ".") {
+		return utils.ResponseBadRequest(ctx, "Format alamat email pemesan tidak valid")
 	}
 
 	if createOrderReq.Quantity < 1 || createOrderReq.Quantity > 4 {

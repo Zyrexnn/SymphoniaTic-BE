@@ -40,6 +40,16 @@ func init() {
 				return fmt.Sprintf("%v", val)
 			}
 		},
+		"safeURL": func(s interface{}) template.URL {
+			switch val := s.(type) {
+			case template.URL:
+				return val
+			case string:
+				return template.URL(val)
+			default:
+				return template.URL(fmt.Sprintf("%v", val))
+			}
+		},
 	}
 
 	var err error

@@ -4,38 +4,39 @@
     <meta charset="UTF-8">
     <title>{{.Title}}</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; color: #e2e8f0; margin: 0; padding: 20px; }
-        .container { max-width: 550px; margin: 0 auto; background: #131b2e; border-radius: 16px; border: 1px solid #1e293b; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .header { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); padding: 25px 20px; text-align: center; border-bottom: 2px solid #6366f1; }
-        .header h1 { margin: 0; color: #fbbf24; font-size: 22px; letter-spacing: 2px; }
-        .header p { margin: 5px 0 0 0; color: #94a3b8; font-size: 13px; }
-        .content { padding: 30px 25px; text-align: center; }
-        .greeting { text-align: left; color: #cbd5e1; font-size: 15px; margin-bottom: 15px; }
-        .otp-box { background: #0f172a; border: 2px dashed #6366f1; border-radius: 12px; padding: 20px; margin: 25px 0; display: inline-block; width: 80%; }
-        .otp-code { font-size: 36px; font-weight: bold; color: #38bdf8; letter-spacing: 10px; font-family: monospace; }
-        .info { font-size: 13px; color: #94a3b8; margin-top: 15px; }
-        .alert-warning { font-size: 12px; color: #f59e0b; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 10px; margin-top: 20px; text-align: left; }
-        .footer { background: #090d16; padding: 18px; text-align: center; font-size: 12px; color: #64748b; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0C0D12; color: #FFFFFF; margin: 0; padding: 24px 12px; }
+        .container { max-width: 520px; margin: 0 auto; background: #14161F; border-radius: 12px; border: 1px solid #272A38; overflow: hidden; }
+        .header { background: #14161F; padding: 26px 20px; text-align: center; border-bottom: 1px solid #272A38; }
+        .header h1 { margin: 0; color: #FFFFFF; font-size: 18px; font-weight: 600; letter-spacing: 2.5px; }
+        .header p { margin: 6px 0 0 0; color: #A1A1AA; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+        .content { padding: 28px 24px; text-align: center; }
+        .greeting { text-align: left; color: #FFFFFF; font-size: 14px; margin-bottom: 10px; }
+        .message { text-align: left; color: #A1A1AA; font-size: 13px; line-height: 1.6; margin: 0 0 24px 0; }
+        .otp-box { background: #0C0D12; border: 1px solid #272A38; border-radius: 10px; padding: 22px 16px; margin: 20px 0; display: inline-block; width: 85%; }
+        .otp-code { font-size: 36px; font-weight: 700; color: #FFFFFF; letter-spacing: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        .info { font-size: 12px; color: #A1A1AA; line-height: 1.5; margin: 16px 0 0 0; }
+        .alert-box { font-size: 11px; color: #71717A; background: #0C0D12; border: 1px solid #272A38; border-radius: 8px; padding: 12px 14px; margin-top: 24px; text-align: left; line-height: 1.5; }
+        .footer { background: #0C0D12; padding: 18px 20px; text-align: center; font-size: 11px; color: #71717A; border-top: 1px solid #272A38; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>SYMPHONIATIC</h1>
+            <h1>{{.Title}}</h1>
             <p>{{.Subtitle}}</p>
         </div>
         <div class="content">
             <div class="greeting">Halo <strong>{{.NameDisplay}}</strong>,</div>
-            <p style="text-align: left; color: #cbd5e1; font-size: 14px; margin: 0;">{{.Warning}}</p>
+            <p class="message">{{.Warning}}</p>
 
             <div class="otp-box">
                 <div class="otp-code">{{.OTPCode}}</div>
             </div>
 
-            <p class="info">Kode OTP ini berlaku selama <strong>5 menit</strong>. Jangan berikan kode ini kepada siapapun demi menjaga keamanan akun Anda.</p>
+            <p class="info">Kode verifikasi ini berlaku selama <strong>5 menit</strong>. Jangan pernah membagikan kode ini kepada siapapun demi menjaga kerahasiaan akun Anda.</p>
 
-            <div class="alert-warning">
-                ⚠️ Jika Anda tidak merasa melakukan permintaan kode ini, abaikan email ini dan pastikan kata sandi Anda tetap aman.
+            <div class="alert-box">
+                Jika Anda tidak merasa melakukan permintaan kode verifikasi ini, abaikan email ini dan pastikan keamanan akun Anda tetap terjaga.
             </div>
         </div>
         <div class="footer">
