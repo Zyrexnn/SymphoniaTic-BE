@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
@@ -266,10 +267,10 @@ func (r *eventRepository) UpdateEvent(ctx context.Context, id string, req *model
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE events
 		SET title = $1, artist = $2, venue = $3, date = $4, time = $5, category = $6, 
-		    category_badge_color = $7, image = $8, audio_url = $9, conductor = $10, 
+		    category_badge_color = $7, image = $8, audio_url = COALESCE(NULLIF($9, ''), audio_url), conductor = $10, 
 		    open_gate = $11, address = $12, organizer = $13, subtitle = $14, rundown = $15, description = $16
 		WHERE id = $17
-	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, id)
+	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, strings.TrimSpace(req.AudioURL), req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, id)
 
 	if err != nil {
 		return fmt.Errorf("gagal memperbarui konser: %w", err)
@@ -287,6 +288,15 @@ func (r *eventRepository) UpdateEvent(ctx context.Context, id string, req *model
 }
 
 func (r *eventRepository) DeleteEvent(ctx context.Context, id string) error {
+	// Cegah error foreign key 500 apabila konser sudah memiliki transaksi tiket aktif
+	var orderCount int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM orders WHERE event_id = $1", id).Scan(&orderCount); err != nil {
+		return fmt.Errorf("gagal memeriksa transaksi terkait konser: %w", err)
+	}
+	if orderCount > 0 {
+		return ErrEventHasOrders
+	}
+
 	result, err := r.db.ExecContext(ctx, "DELETE FROM events WHERE id = $1", id)
 	if err != nil {
 		return fmt.Errorf("gagal menghapus konser: %w", err)

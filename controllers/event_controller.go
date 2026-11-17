@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
@@ -59,6 +60,24 @@ func (c *EventController) GetEventByID(ctx *fiber.Ctx) error {
 	return utils.ResponseOK(ctx, "Berhasil mengambil detail konser", event)
 }
 
+func validateEventSchedule(openGate, eventTime string, rundown []models.RundownItem) string {
+	if strings.TrimSpace(openGate) == "" {
+		return "Waktu Open Gate wajib diisi"
+	}
+
+	if valid, isBefore := utils.IsTimeBefore(openGate, eventTime); valid && !isBefore {
+		return "Waktu Open Gate harus lebih awal dari waktu mulai pertunjukan konser"
+	}
+
+	for _, item := range rundown {
+		if strings.TrimSpace(item.Time) == "" || strings.TrimSpace(item.Activity) == "" {
+			return "Setiap item rundown wajib memiliki waktu dan aktivitas"
+		}
+	}
+
+	return ""
+}
+
 // CreateEvent godoc
 // @Summary Membuat event/konser baru (Admin)
 // @Description Menambahkan event konser baru ke dalam sistem beserta kategori tiket awal.
@@ -85,6 +104,10 @@ func (c *EventController) CreateEvent(ctx *fiber.Ctx) error {
 			Success: false,
 			Message: "Judul, Artist, Venue, Tanggal, dan Waktu wajib diisi",
 		})
+	}
+
+	if errMsg := validateEventSchedule(createEventReq.OpenGate, createEventReq.Time, createEventReq.Rundown); errMsg != "" {
+		return utils.ResponseBadRequest(ctx, errMsg)
 	}
 
 	if createEventReq.Category == "" {
@@ -134,6 +157,10 @@ func (c *EventController) UpdateEvent(ctx *fiber.Ctx) error {
 		})
 	}
 
+	if errMsg := validateEventSchedule(updateEventReq.OpenGate, updateEventReq.Time, updateEventReq.Rundown); errMsg != "" {
+		return utils.ResponseBadRequest(ctx, errMsg)
+	}
+
 	err := c.repo.UpdateEvent(ctx.Context(), eventID, &updateEventReq)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -174,6 +201,12 @@ func (c *EventController) DeleteEvent(ctx *fiber.Ctx) error {
 			return ctx.Status(fiber.StatusNotFound).JSON(models.APIResponse{
 				Success: false,
 				Message: "Event konser tidak ditemukan",
+			})
+		}
+		if errors.Is(err, repositories.ErrEventHasOrders) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser tidak dapat dihapus karena sudah memiliki transaksi tiket aktif. Gunakan fitur Tutup Order.",
 			})
 		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{

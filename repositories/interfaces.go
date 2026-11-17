@@ -12,6 +12,7 @@ import (
 var (
 	ErrNotFound          = errors.New("data tidak ditemukan")
 	ErrEventClosed       = errors.New("penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai")
+	ErrEventHasOrders    = errors.New("konser tidak dapat dihapus karena sudah memiliki transaksi tiket aktif")
 	ErrQuotaExceeded     = errors.New("kuota tiket tidak mencukupi")
 	ErrOTPCooldown       = errors.New("mohon tunggu 60 detik sebelum meminta OTP baru")
 	ErrOTPInvalid        = errors.New("kode OTP tidak valid atau telah kedaluwarsa")

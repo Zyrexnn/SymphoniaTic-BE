@@ -166,6 +166,7 @@ func TestEventController_CreateEvent(t *testing.T) {
 			Venue:       "Gedung Kesenian Jakarta",
 			Date:        "2026-12-30",
 			Time:        "19:00",
+			OpenGate:    "17:30",
 			Category:    "SIMFONI UTAMA",
 			Description: "Interpretasi Four Seasons karya Antonio Vivaldi.",
 		}
@@ -211,6 +212,103 @@ func TestEventController_CreateEvent(t *testing.T) {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("Gagal (400 Bad Request) saat OpenGate kosong", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+
+		payload := models.CreateEventRequest{
+			Title:  "Konser Sore",
+			Artist: "Jakarta Ensemble",
+			Venue:  "Aula Simfonia",
+			Date:   "2026-12-30",
+			Time:   "14:21 WIB",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/events", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat OpenGate lebih lambat atau sama dengan Time", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+
+		cases := []struct {
+			openGate string
+			time     string
+		}{
+			{"18:00 WIB", "14:21 WIB"},
+			{"14:21 WIB", "14:21 WIB"},
+			{"15.00 WIB", "02:21 PM"},
+		}
+
+		for _, tc := range cases {
+			payload := models.CreateEventRequest{
+				Title:    "Konser Siang",
+				Artist:   "Jakarta Ensemble",
+				Venue:    "Aula Simfonia",
+				Date:     "2026-12-30",
+				Time:     tc.time,
+				OpenGate: tc.openGate,
+			}
+			bodyBytes, _ := json.Marshal(payload)
+
+			req := httptest.NewRequest("POST", "/api/v1/admin/events", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				t.Fatalf("Gagal mengirim HTTP request: %v", err)
+			}
+
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("Status tidak sesuai untuk openGate=%s time=%s: ekspektasi 400, dapat %d", tc.openGate, tc.time, resp.StatusCode)
+			}
+
+			var apiResp models.APIResponse
+			_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+			if apiResp.Message != "Waktu Open Gate harus lebih awal dari waktu mulai pertunjukan konser" {
+				t.Fatalf("Pesan error tidak sesuai: dapat %q", apiResp.Message)
+			}
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat item rundown tidak lengkap", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+
+		payload := models.CreateEventRequest{
+			Title:    "Konser Siang",
+			Artist:   "Jakarta Ensemble",
+			Venue:    "Aula Simfonia",
+			Date:     "2026-12-30",
+			Time:     "14:21 WIB",
+			OpenGate: "13:21 WIB",
+			Rundown: []models.RundownItem{
+				{Time: "13:21 WIB", Activity: ""},
+			},
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/events", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
 }
 
 func TestEventController_UpdateEvent(t *testing.T) {
@@ -226,8 +324,10 @@ func TestEventController_UpdateEvent(t *testing.T) {
 
 		app := setupEventControllerTest(mockRepo)
 		payload := models.UpdateEventRequest{
-			Title: "Judul Konser Baru Diperbarui",
-			Venue: "Aula Simfonia Lantai 2",
+			Title:    "Judul Konser Baru Diperbarui",
+			Venue:    "Aula Simfonia Lantai 2",
+			Time:     "19:30 WIB",
+			OpenGate: "18:00 WIB",
 		}
 		bodyBytes, _ := json.Marshal(payload)
 
@@ -243,6 +343,27 @@ func TestEventController_UpdateEvent(t *testing.T) {
 		}
 	})
 
+	t.Run("Gagal (400 Bad Request) saat OpenGate kosong atau >= Time", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+
+		for _, payload := range []models.UpdateEventRequest{
+			{Title: "Tanpa Open Gate", Time: "14:21 WIB", OpenGate: ""},
+			{Title: "Open Gate Terlambat", Time: "14:21 WIB", OpenGate: "18:00 WIB"},
+		} {
+			bodyBytes, _ := json.Marshal(payload)
+			req := httptest.NewRequest("PUT", "/api/v1/admin/events/evt-01", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				t.Fatalf("Gagal mengirim HTTP request: %v", err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("Status tidak sesuai untuk %q: ekspektasi 400, dapat %d", payload.Title, resp.StatusCode)
+			}
+		}
+	})
+
 	t.Run("Gagal (404 Not Found) saat event tidak ditemukan", func(t *testing.T) {
 		mockRepo := &repositories.MockEventRepository{
 			UpdateEventFunc: func(ctx context.Context, id string, req *models.UpdateEventRequest) error {
@@ -252,7 +373,9 @@ func TestEventController_UpdateEvent(t *testing.T) {
 
 		app := setupEventControllerTest(mockRepo)
 		payload := models.UpdateEventRequest{
-			Title: "Judul Baru",
+			Title:    "Judul Baru",
+			Time:     "19:30 WIB",
+			OpenGate: "18:00 WIB",
 		}
 		bodyBytes, _ := json.Marshal(payload)
 
@@ -359,6 +482,31 @@ func TestEventController_DeleteEvent(t *testing.T) {
 
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("Status tidak sesuai: ekspektasi 404 Not Found, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat konser memiliki transaksi tiket aktif", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			DeleteEventFunc: func(ctx context.Context, id string) error {
+				return repositories.ErrEventHasOrders
+			},
+		}
+
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("DELETE", "/api/v1/admin/events/evt-with-orders", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Konser tidak dapat dihapus karena sudah memiliki transaksi tiket aktif. Gunakan fitur Tutup Order." {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %q", apiResp.Message)
 		}
 	})
 }
