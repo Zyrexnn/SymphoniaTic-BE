@@ -100,22 +100,29 @@ func (c *RefundController) RequestRefundOTP(ctx *fiber.Ctx) error {
 		})
 	}
 
-	if targetOrder.Status == "CHECKED_IN" {
+	normalizedOrderStatus := strings.ToUpper(strings.TrimSpace(targetOrder.Status))
+	if normalizedOrderStatus == "CHECKED_IN" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 			Success: false,
 			Message: "Tiket sudah di-scan (Check In) pada venue dan tidak dapat dikembalikan / refund",
 		})
 	}
-	if targetOrder.Status == "REFUND_REQUESTED" || targetOrder.Status == "REFUNDED" {
+	if normalizedOrderStatus == "REFUND_REQUESTED" || normalizedOrderStatus == "REFUNDED" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 			Success: false,
 			Message: "Pengajuan refund untuk tiket ini sedang diproses atau sudah selesai",
 		})
 	}
-	if targetOrder.Status == "CANCELLED" {
+	if normalizedOrderStatus == "CANCELLED" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 			Success: false,
 			Message: "Pesanan ini sudah dibatalkan sebelumnya",
+		})
+	}
+	if normalizedOrderStatus != "ISSUED" && normalizedOrderStatus != "VERIFIED" && normalizedOrderStatus != "REMINDED" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Status tiket tidak memenuhi syarat untuk pengajuan refund",
 		})
 	}
 

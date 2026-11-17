@@ -57,6 +57,9 @@ type OrderRecord struct {
 	Artist        string    `json:"artist"`
 	Venue         string    `json:"venue"`
 	Date          string    `json:"date"`
+	OpenGate      string    `json:"openGate,omitempty"`
+	EventTime     string    `json:"eventTime,omitempty"`
+	VenueAddress  string    `json:"venueAddress,omitempty"`
 	CategoryName  string    `json:"categoryName"`
 	Quantity      int       `json:"quantity"`
 	TotalPrice    float64   `json:"totalPrice"`

@@ -164,10 +164,10 @@ func (c *OrderController) UpdateOrderStatus(ctx *fiber.Ctx) error {
 	}
 
 	// Mengirimkan notifikasi email pengingat acara jika status diubah menjadi REMINDED atau REMINDER
-	if strings.ToUpper(updateStatusReq.Status) == "REMINDED" || strings.ToUpper(updateStatusReq.Status) == "REMINDER" {
+	if strings.ToUpper(strings.TrimSpace(updateStatusReq.Status)) == "REMINDED" || strings.ToUpper(strings.TrimSpace(updateStatusReq.Status)) == "REMINDER" {
 		ord, fetchErr := c.repo.GetOrderByID(ctx.Context(), orderID)
 		if fetchErr == nil && ord != nil {
-			services.SendEventReminderEmail(ord.UserEmail, ord.UserName, ord.EventTitle, ord.Venue, "", ord.Date, ord.OrderCode)
+			services.SendEventReminderEmailWithSchedule(ord.UserEmail, ord.UserName, ord.EventTitle, ord.Venue, ord.VenueAddress, ord.Date, ord.EventTime, ord.OpenGate, ord.OrderCode)
 		}
 	}
 

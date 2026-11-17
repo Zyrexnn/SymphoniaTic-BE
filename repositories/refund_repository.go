@@ -118,7 +118,7 @@ func (r *refundRepository) GetRefundStatus(ctx context.Context, orderCode, userE
 		       o.status, o.event_title, o.category_name, o.quantity, o.user_name
 		FROM refund_requests r
 		JOIN orders o ON o.id = r.order_id
-		WHERE UPPER(r.order_code) = UPPER($1) AND LOWER(r.user_email) = LOWER($2)
+		WHERE UPPER(r.order_code) = UPPER($1) AND LOWER(r.user_email) = LOWER($2) AND r.status != 'OTP_SENT'
 	`, orderCode, userEmail).Scan(
 		&record.ID, &record.OrderID, &record.OrderCode, &record.UserEmail, &record.BankName,
 		&record.AccountNumber, &record.AccountHolder, &record.Reason, &record.RefundAmount,
@@ -281,7 +281,7 @@ func (r *refundRepository) GetUserRefunds(ctx context.Context, userEmail string)
 		       COALESCE(o.quantity, 0), COALESCE(o.user_name, '')
 		FROM refund_requests r
 		LEFT JOIN orders o ON r.order_id = o.id
-		WHERE LOWER(r.user_email) = LOWER($1)
+		WHERE LOWER(r.user_email) = LOWER($1) AND r.status != 'OTP_SENT'
 		ORDER BY r.created_at DESC
 	`, userEmail)
 	if err != nil {

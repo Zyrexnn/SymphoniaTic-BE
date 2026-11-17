@@ -32,20 +32,22 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 	orderStatusFilter := strings.TrimSpace(ctx.Query("status"))
 
 	baseQuery := `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2))
+		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
+		FROM orders o
+		LEFT JOIN events e ON o.event_id = e.id
+		WHERE (o.user_id = $1 OR LOWER(o.user_email) = LOWER($2))
 	`
 	queryArgs := []interface{}{authenticatedUserID, authenticatedUserEmail}
 
 	if orderStatusFilter != "" {
-		baseQuery += " AND UPPER(status) = UPPER($3)"
+		baseQuery += " AND UPPER(o.status) = UPPER($3)"
 		queryArgs = append(queryArgs, orderStatusFilter)
 	}
 
-	baseQuery += " ORDER BY created_at DESC"
+	baseQuery += " ORDER BY o.created_at DESC"
 
 	orderRows, err := database.DB.Query(baseQuery, queryArgs...)
 	if err != nil {
@@ -58,6 +60,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 		var orderRecord models.OrderRecord
 		rowScanErr := orderRows.Scan(
 			&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
+			&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
 			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.Status,
 			&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 		)
@@ -92,13 +95,16 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 
 	var orderRecord models.OrderRecord
 	err := database.DB.QueryRow(`
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE LOWER(order_code) = LOWER($1) AND (user_id = $2 OR LOWER(user_email) = LOWER($3))
+		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
+		FROM orders o
+		LEFT JOIN events e ON o.event_id = e.id
+		WHERE LOWER(o.order_code) = LOWER($1) AND (o.user_id = $2 OR LOWER(o.user_email) = LOWER($3))
 	`, requestedOrderCode, authenticatedUserID, authenticatedUserEmail).Scan(
 		&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
+		&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
 		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.Status,
 		&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 	)
@@ -237,8 +243,8 @@ func GetUserDashboardSummary(ctx *fiber.Ctx) error {
 
 	err := database.DB.QueryRow(`
 		SELECT
-			COALESCE((SELECT SUM(quantity) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) != 'REFUNDED'), 0),
-			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) IN ('ISSUED', 'VERIFIED')), 0),
+			COALESCE((SELECT SUM(quantity) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) NOT IN ('REFUNDED', 'CANCELLED')), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) IN ('ISSUED', 'VERIFIED', 'REMINDED')), 0),
 			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) = 'CHECKED_IN'), 0),
 			COALESCE((SELECT COUNT(*) FROM refund_requests WHERE LOWER(user_email) = LOWER($2) AND UPPER(status) = 'PENDING'), 0)
 	`, authenticatedUserID, authenticatedUserEmail).Scan(
@@ -277,7 +283,7 @@ func GetUserRefunds(ctx *fiber.Ctx) error {
 		       COALESCE(o.quantity, 0), COALESCE(o.user_name, '')
 		FROM refund_requests r
 		LEFT JOIN orders o ON r.order_id = o.id
-		WHERE LOWER(r.user_email) = LOWER($1)
+		WHERE LOWER(r.user_email) = LOWER($1) AND r.status != 'OTP_SENT'
 		ORDER BY r.created_at DESC
 	`, authenticatedUserEmail)
 

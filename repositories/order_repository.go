@@ -32,13 +32,13 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		_ = tx.QueryRowContext(ctx, "SELECT event_id FROM ticket_categories WHERE id = $1", req.TicketCategoryID).Scan(&req.EventID)
 	}
 
-	var evtTitle, evtArtist, evtVenue, evtDate, evtTime string
+	var evtTitle, evtArtist, evtVenue, evtDate, evtTime, evtOpenGate, evtAddress string
 	var evtClosed bool
 	err = tx.QueryRowContext(ctx, `
-		SELECT title, artist, venue, date, time, is_closed
+		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed
 		FROM events
 		WHERE id = $1
-	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtClosed)
+	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -117,6 +117,9 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		Artist:        evtArtist,
 		Venue:         evtVenue,
 		Date:          dateFull,
+		OpenGate:      evtOpenGate,
+		EventTime:     evtTime,
+		VenueAddress:  evtAddress,
 		CategoryName:  catName,
 		Quantity:      req.Quantity,
 		TotalPrice:    totalPrice,
@@ -129,6 +132,30 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	}, nil
 }
 
+const orderWithEventSelect = `
+	SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+	       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
+	       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+	       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
+	FROM orders o
+	LEFT JOIN events e ON o.event_id = e.id
+`
+
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanOrderWithEvent(scanner rowScanner) (models.OrderRecord, error) {
+	var record models.OrderRecord
+	err := scanner.Scan(
+		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
+		&record.Artist, &record.Venue, &record.Date, &record.OpenGate, &record.EventTime, &record.VenueAddress,
+		&record.CategoryName, &record.Quantity, &record.TotalPrice, &record.UserName, &record.UserEmail,
+		&record.QRCode, &record.Status, &record.PaymentMethod, &record.CreatedAt,
+	)
+	return record, err
+}
+
 func (r *orderRepository) GetOrderByCode(ctx context.Context, code string) (*models.OrderRecord, error) {
 	cleanCode := strings.TrimSpace(code)
 	orderCodeOnly := cleanCode
@@ -136,19 +163,9 @@ func (r *orderRepository) GetOrderByCode(ctx context.Context, code string) (*mod
 		orderCodeOnly = cleanCode[3:]
 	}
 
-	var record models.OrderRecord
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE LOWER(order_code) = LOWER($1) OR LOWER(order_code) = LOWER($2) OR LOWER(qr_code) = LOWER($3)
-	`, cleanCode, orderCodeOnly, cleanCode).Scan(
-		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
-		&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
-		&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
-		&record.Status, &record.PaymentMethod, &record.CreatedAt,
-	)
+	record, err := scanOrderWithEvent(r.db.QueryRowContext(ctx, orderWithEventSelect+`
+		WHERE LOWER(o.order_code) = LOWER($1) OR LOWER(o.order_code) = LOWER($2) OR LOWER(o.qr_code) = LOWER($3)
+	`, cleanCode, orderCodeOnly, cleanCode))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -160,19 +177,9 @@ func (r *orderRepository) GetOrderByCode(ctx context.Context, code string) (*mod
 }
 
 func (r *orderRepository) GetOrderByID(ctx context.Context, id string) (*models.OrderRecord, error) {
-	var record models.OrderRecord
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE id = $1
-	`, id).Scan(
-		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
-		&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
-		&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
-		&record.Status, &record.PaymentMethod, &record.CreatedAt,
-	)
+	record, err := scanOrderWithEvent(r.db.QueryRowContext(ctx, orderWithEventSelect+`
+		WHERE o.id = $1
+	`, id))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -225,12 +232,12 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 		return nil, fmt.Errorf("gagal memverifikasi data tiket: %w", err)
 	}
 
-	switch record.Status {
+	switch strings.ToUpper(strings.TrimSpace(record.Status)) {
 	case "CHECKED_IN":
 		return nil, ErrTicketAlreadyUsed
 	case "REFUNDED", "REFUND_REQUESTED", "CANCELLED":
 		return nil, ErrTicketInvalid
-	case "ISSUED", "VERIFIED":
+	case "ISSUED", "VERIFIED", "REMINDED":
 	default:
 		return nil, ErrTicketNotIssued
 	}
@@ -249,21 +256,17 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 }
 
 func (r *orderRepository) GetUserOrders(ctx context.Context, userID, userEmail, statusFilter string) ([]models.OrderRecord, error) {
-	baseQuery := `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2))
+	baseQuery := orderWithEventSelect + `
+		WHERE (o.user_id = $1 OR LOWER(o.user_email) = LOWER($2))
 	`
 	queryArgs := []interface{}{userID, userEmail}
 
 	if statusFilter != "" {
-		baseQuery += " AND UPPER(status) = UPPER($3)"
+		baseQuery += " AND UPPER(o.status) = UPPER($3)"
 		queryArgs = append(queryArgs, statusFilter)
 	}
 
-	baseQuery += " ORDER BY created_at DESC"
+	baseQuery += " ORDER BY o.created_at DESC"
 
 	rows, err := r.db.QueryContext(ctx, baseQuery, queryArgs...)
 	if err != nil {
@@ -273,13 +276,8 @@ func (r *orderRepository) GetUserOrders(ctx context.Context, userID, userEmail, 
 
 	userOrders := make([]models.OrderRecord, 0)
 	for rows.Next() {
-		var record models.OrderRecord
-		if err := rows.Scan(
-			&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
-			&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
-			&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
-			&record.Status, &record.PaymentMethod, &record.CreatedAt,
-		); err != nil {
+		record, err := scanOrderWithEvent(rows)
+		if err != nil {
 			return nil, fmt.Errorf("gagal membaca baris pesanan: %w", err)
 		}
 		userOrders = append(userOrders, record)
@@ -293,19 +291,9 @@ func (r *orderRepository) GetUserOrders(ctx context.Context, userID, userEmail, 
 }
 
 func (r *orderRepository) GetUserOrderByCode(ctx context.Context, code, userID, userEmail string) (*models.OrderRecord, error) {
-	var record models.OrderRecord
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE LOWER(order_code) = LOWER($1) AND (user_id = $2 OR LOWER(user_email) = LOWER($3))
-	`, code, userID, userEmail).Scan(
-		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
-		&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
-		&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
-		&record.Status, &record.PaymentMethod, &record.CreatedAt,
-	)
+	record, err := scanOrderWithEvent(r.db.QueryRowContext(ctx, orderWithEventSelect+`
+		WHERE LOWER(o.order_code) = LOWER($1) AND (o.user_id = $2 OR LOWER(o.user_email) = LOWER($3))
+	`, code, userID, userEmail))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -317,29 +305,25 @@ func (r *orderRepository) GetUserOrderByCode(ctx context.Context, code, userID, 
 }
 
 func (r *orderRepository) GetAllOrders(ctx context.Context, searchQuery, statusFilter string) ([]models.OrderRecord, error) {
-	query := `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
+	query := orderWithEventSelect + `
 		WHERE 1=1
 	`
 	var queryArgs []interface{}
 	argIdx := 1
 
 	if searchQuery != "" {
-		query += fmt.Sprintf(" AND (LOWER(order_code) LIKE $%d OR LOWER(user_name) LIKE $%d OR LOWER(user_email) LIKE $%d OR LOWER(event_title) LIKE $%d)", argIdx, argIdx, argIdx, argIdx)
+		query += fmt.Sprintf(" AND (LOWER(o.order_code) LIKE $%d OR LOWER(o.user_name) LIKE $%d OR LOWER(o.user_email) LIKE $%d OR LOWER(o.event_title) LIKE $%d)", argIdx, argIdx, argIdx, argIdx)
 		queryArgs = append(queryArgs, "%"+strings.ToLower(searchQuery)+"%")
 		argIdx++
 	}
 
 	if statusFilter != "" {
-		query += fmt.Sprintf(" AND status = $%d", argIdx)
+		query += fmt.Sprintf(" AND o.status = $%d", argIdx)
 		queryArgs = append(queryArgs, strings.ToUpper(statusFilter))
 		argIdx++
 	}
 
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY o.created_at DESC"
 
 	rows, err := r.db.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
@@ -349,13 +333,8 @@ func (r *orderRepository) GetAllOrders(ctx context.Context, searchQuery, statusF
 
 	var allOrders []models.OrderRecord
 	for rows.Next() {
-		var record models.OrderRecord
-		if err := rows.Scan(
-			&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
-			&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
-			&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
-			&record.Status, &record.PaymentMethod, &record.CreatedAt,
-		); err != nil {
+		record, err := scanOrderWithEvent(rows)
+		if err != nil {
 			return nil, fmt.Errorf("gagal membaca baris pesanan: %w", err)
 		}
 		allOrders = append(allOrders, record)
@@ -369,17 +348,55 @@ func (r *orderRepository) GetAllOrders(ctx context.Context, searchQuery, statusF
 }
 
 func (r *orderRepository) UpdateOrderStatus(ctx context.Context, id, status string) error {
-	result, err := r.db.ExecContext(ctx, "UPDATE orders SET status = $1 WHERE id = $2", strings.ToUpper(status), id)
+	normalizedTarget := strings.ToUpper(strings.TrimSpace(status))
+	if normalizedTarget == "REMINDER" {
+		normalizedTarget = "REMINDED"
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("gagal memulai transaksi pembaruan status pesanan: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Penguncian baris FOR UPDATE mencegah race condition saat transisi status berpotensi mengembalikan kuota tiket
+	var currentStatus, eventID, categoryName string
+	var quantity int
+	err = tx.QueryRowContext(ctx, `
+		SELECT status, event_id, category_name, quantity
+		FROM orders
+		WHERE id = $1
+		FOR UPDATE
+	`, id).Scan(&currentStatus, &eventID, &categoryName, &quantity)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("gagal mengambil data pesanan untuk pembaruan status: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, "UPDATE orders SET status = $1 WHERE id = $2", normalizedTarget, id)
 	if err != nil {
 		return fmt.Errorf("gagal memperbarui status pesanan: %w", err)
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("gagal memeriksa baris yang diperbarui: %w", err)
+	normalizedCurrent := strings.ToUpper(strings.TrimSpace(currentStatus))
+	isFromActive := normalizedCurrent == "ISSUED" || normalizedCurrent == "VERIFIED" || normalizedCurrent == "REMINDED"
+	isToInactive := normalizedTarget == "CANCELLED" || normalizedTarget == "REFUNDED"
+
+	if isFromActive && isToInactive && quantity > 0 {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE ticket_categories
+			SET remaining_quota = remaining_quota + $1
+			WHERE event_id = $2 AND name = $3
+		`, quantity, eventID, categoryName)
+		if err != nil {
+			return fmt.Errorf("gagal mengembalikan kuota kategori tiket: %w", err)
+		}
 	}
-	if affected == 0 {
-		return ErrNotFound
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("gagal konfirmasi transaksi pembaruan status pesanan: %w", err)
 	}
 
 	return nil
@@ -400,7 +417,7 @@ func (r *orderRepository) GetAdminDashboardMetrics(ctx context.Context) (*models
 			COALESCE(SUM(quantity), 0),
 			COUNT(*)
 		FROM orders
-		WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
+		WHERE status IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN')
 	`).Scan(&metrics.TotalRevenue, &metrics.TicketsSold, &metrics.TotalOrders)
 	if err != nil {
 		return nil, fmt.Errorf("gagal mengagregasi ringkasan pesanan: %w", err)
@@ -420,7 +437,7 @@ func (r *orderRepository) GetAdminDashboardMetrics(ctx context.Context) (*models
 	eventRevenueRows, err := r.db.QueryContext(ctx, `
 		SELECT e.id, e.title, COALESCE(SUM(o.total_price), 0) as rev, COALESCE(SUM(o.quantity), 0) as sold
 		FROM events e
-		LEFT JOIN orders o ON e.id = o.event_id AND o.status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
+		LEFT JOIN orders o ON e.id = o.event_id AND o.status IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN')
 		GROUP BY e.id, e.title
 		ORDER BY rev DESC
 	`)
@@ -451,7 +468,7 @@ func (r *orderRepository) GetAdminDashboardMetrics(ctx context.Context) (*models
 			COALESCE(SUM(total_price), 0) as revenue,
 			COALESCE(SUM(quantity), 0) as tickets
 		FROM orders
-		WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
+		WHERE status IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN')
 		GROUP BY TO_CHAR(created_at, 'Mon'), DATE_TRUNC('month', created_at)
 		ORDER BY DATE_TRUNC('month', created_at)
 		LIMIT 6
@@ -478,7 +495,7 @@ func (r *orderRepository) GetAdminDashboardMetrics(ctx context.Context) (*models
 			category_name, 
 			COALESCE(SUM(total_price), 0) as total_val
 		FROM orders
-		WHERE status IN ('ISSUED', 'VERIFIED', 'CHECKED_IN')
+		WHERE status IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN')
 		GROUP BY category_name
 		ORDER BY total_val DESC
 	`)
@@ -517,8 +534,8 @@ func (r *orderRepository) GetUserDashboardSummary(ctx context.Context, userID, u
 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
-			COALESCE((SELECT SUM(quantity) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) != 'REFUNDED'), 0),
-			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) IN ('ISSUED', 'VERIFIED')), 0),
+			COALESCE((SELECT SUM(quantity) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) NOT IN ('REFUNDED', 'CANCELLED')), 0),
+			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) IN ('ISSUED', 'VERIFIED', 'REMINDED')), 0),
 			COALESCE((SELECT COUNT(*) FROM orders WHERE (user_id = $1 OR LOWER(user_email) = LOWER($2)) AND UPPER(status) = 'CHECKED_IN'), 0),
 			COALESCE((SELECT COUNT(*) FROM refund_requests WHERE LOWER(user_email) = LOWER($2) AND UPPER(status) = 'PENDING'), 0)
 	`, userID, userEmail).Scan(

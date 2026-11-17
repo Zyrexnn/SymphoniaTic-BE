@@ -286,13 +286,16 @@ func TestOrderController_UpdateOrderStatus(t *testing.T) {
 			},
 			GetOrderByIDFunc: func(ctx context.Context, id string) (*models.OrderRecord, error) {
 				return &models.OrderRecord{
-					ID:         "ord-01",
-					OrderCode:  "SYM-100001",
-					UserEmail:  "user1@example.com",
-					UserName:   "User Satu",
-					EventTitle: "Simfoni No. 5",
-					Venue:      "Aula Simfonia Jakarta",
-					Date:       "2026-12-15",
+					ID:           "ord-01",
+					OrderCode:    "SYM-100001",
+					UserEmail:    "user1@example.com",
+					UserName:     "User Satu",
+					EventTitle:   "Simfoni No. 5",
+					Venue:        "Aula Simfonia Jakarta",
+					VenueAddress: "Jl. Industri Blok B14 No.1, Kemayoran",
+					Date:         "2026-12-15 @ 19:30 WIB",
+					EventTime:    "19:30 WIB",
+					OpenGate:     "18:00 WIB",
 				}, nil
 			},
 		}

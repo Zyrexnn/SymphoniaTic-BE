@@ -230,6 +230,43 @@ func TestRefundController_RequestRefundOTP(t *testing.T) {
 			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
 		}
 	})
+
+	t.Run("Sukses (200 OK) saat status tiket REMINDED", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:         "ord-reminded-01",
+					OrderCode:  "SYM-123456",
+					UserEmail:  "user@example.com",
+					TotalPrice: 750000,
+					Status:     "REMINDED",
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{
+			RequestRefundOTPFunc: func(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error {
+				return nil
+			},
+		}
+
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		payload := models.RequestRefundOTPInput{
+			OrderCode: "SYM-123456",
+			UserEmail: "user@example.com",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/refunds/request-otp", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Status tidak sesuai: ekspektasi 200 OK untuk tiket REMINDED, dapat %d", resp.StatusCode)
+		}
+	})
 }
 
 func TestRefundController_SubmitRefund(t *testing.T) {
