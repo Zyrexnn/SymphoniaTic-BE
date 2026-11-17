@@ -46,37 +46,25 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 		})
 	}
 
-	adminUser := "admin"
-	adminPass := "123"
-	petugasUser := "petugas"
-	petugasPass := "123"
+	var adminUser, adminPass, petugasUser, petugasPass string
 
 	if c.authCfg != nil {
-		if c.authCfg.AdminUsername != "" {
-			adminUser = c.authCfg.AdminUsername
-		}
-		if c.authCfg.AdminPassword != "" {
-			adminPass = c.authCfg.AdminPassword
-		}
-		if c.authCfg.PetugasUsername != "" {
-			petugasUser = c.authCfg.PetugasUsername
-		}
-		if c.authCfg.PetugasPassword != "" {
-			petugasPass = c.authCfg.PetugasPassword
-		}
+		adminUser = c.authCfg.AdminUsername
+		adminPass = c.authCfg.AdminPassword
+		petugasUser = c.authCfg.PetugasUsername
+		petugasPass = c.authCfg.PetugasPassword
 	} else {
-		if u := os.Getenv("ADMIN_USERNAME"); u != "" {
-			adminUser = u
-		}
-		if p := os.Getenv("ADMIN_PASSWORD"); p != "" {
-			adminPass = p
-		}
-		if u := os.Getenv("PETUGAS_USERNAME"); u != "" {
-			petugasUser = u
-		}
-		if p := os.Getenv("PETUGAS_PASSWORD"); p != "" {
-			petugasPass = p
-		}
+		adminUser = os.Getenv("ADMIN_USERNAME")
+		adminPass = os.Getenv("ADMIN_PASSWORD")
+		petugasUser = os.Getenv("PETUGAS_USERNAME")
+		petugasPass = os.Getenv("PETUGAS_PASSWORD")
+	}
+
+	if adminUser == "" || adminPass == "" {
+		return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+			Success: false,
+			Message: "Autentikasi admin belum dikonfigurasi di environment server",
+		})
 	}
 
 	var authenticatedRole string

@@ -117,7 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_otps_email_purpose ON auth_otps(email, purpo
 -- 3. RESET & DATA SEEDING
 TRUNCATE TABLE orders, ticket_categories, events, refund_requests, auth_otps CASCADE;
 
-INSERT INTO events (id, title, subtitle, artist, conductor, venue, address, date, time, open_gate, category, category_badge_color, image, audio_url, organizer, description, rundown)
+INSERT INTO events (id, title, subtitle, artist, conductor, venue, address, date, time, open_gate, category, category_badge_color, image, audio_url, organizer, description, rundown, event_date_time)
 VALUES 
 (
     'evt-1',
@@ -127,7 +127,7 @@ VALUES
     'Maestro Alexander Vance',
     'Aula Simfonia Jakarta',
     'Jl. Industri Blok B14 No.1, Kemayoran, Jakarta Pusat 10720',
-    'Sabtu, 18 April 2026',
+    'Sabtu, 18 April 2027',
     '19:30 WIB',
     '18:00 WIB',
     'SIMFONI',
@@ -143,7 +143,8 @@ VALUES
       {"time": "20:30 WIB", "activity": "Istirahat / Intermission (20 Menit)"},
       {"time": "20:50 WIB", "activity": "Babak II: Movement II & III Finale"},
       {"time": "21:45 WIB", "activity": "Selesai & Sesi Foto Konduktor"}
-    ]'::jsonb
+    ]'::jsonb,
+    '2027-04-18 19:30:00+07'::timestamptz
 ),
 (
     'evt-2',
@@ -153,7 +154,7 @@ VALUES
     'Violinis Utama Iskandar Widjaja',
     'TIM Concert Hall (Taman Ismail Marzuki)',
     'Jl. Cikini Raya No.73, Menteng, Jakarta Pusat',
-    'Minggu, 19 April 2026',
+    'Minggu, 19 April 2027',
     '20:00 WIB',
     '18:30 WIB',
     'KAMAR MUSIK',
@@ -168,7 +169,8 @@ VALUES
       {"time": "20:00 WIB", "activity": "Pertunjukan Utama Viva La Vida Orchestra"},
       {"time": "21:00 WIB", "activity": "Pertunjukan Sesi II Band Symphony"},
       {"time": "22:00 WIB", "activity": "Penutupan & Sesi Tanya Jawab Musik"}
-    ]'::jsonb
+    ]'::jsonb,
+    '2027-04-19 20:00:00+07'::timestamptz
 ),
 (
     'evt-3',
@@ -178,7 +180,7 @@ VALUES
     'Maestro David Chen',
     'JIExpo Symphony Hall',
     'Gedung Pusat Niaga Pekan Raya Jakarta, Kemayoran, Jakarta Pusat',
-    'Jumat, 24 April 2026',
+    'Jumat, 24 April 2027',
     '19:00 WIB',
     '17:30 WIB',
     'BALET & OPERA',
@@ -193,7 +195,8 @@ VALUES
       {"time": "20:15 WIB", "activity": "Istirahat (15 Menit)"},
       {"time": "20:30 WIB", "activity": "Babak II: Winner Takes It All Highlights"},
       {"time": "21:30 WIB", "activity": "Penutupan & Curtain Call"}
-    ]'::jsonb
+    ]'::jsonb,
+    '2027-04-24 19:00:00+07'::timestamptz
 ),
 (
     'evt-4',
@@ -203,7 +206,7 @@ VALUES
     'Dr. Nathania Karina',
     'Aula Simfonia Jakarta',
     'Jl. Industri Blok B14 No.1, Kemayoran, Jakarta Pusat',
-    'Sabtu, 2 Mei 2026',
+    'Sabtu, 2 Mei 2027',
     '19:00 WIB',
     '17:30 WIB',
     'NUSANTARA SYMPHONY',
@@ -218,7 +221,8 @@ VALUES
       {"time": "20:15 WIB", "activity": "Istirahat (15 Menit)"},
       {"time": "20:30 WIB", "activity": "Babak II: Pertunjukan Utama Laskar Pelangi Symphony"},
       {"time": "21:45 WIB", "activity": "Selesai & Sesi Foto Musisi"}
-    ]'::jsonb
+    ]'::jsonb,
+    '2027-05-02 19:00:00+07'::timestamptz
 );
 
 -- Seed Categories

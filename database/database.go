@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/config"
+	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	_ "github.com/lib/pq"
 )
 
@@ -222,7 +223,7 @@ func seedInitialData() {
 			Title:     "Simfoni Mahakarya Beethoven No. 9",
 			Artist:    "Orkestra Filharmoni Jakarta & Solois Vokal",
 			Venue:     "Aula Simfoni Jakarta, Kemayoran",
-			Date:      "15 Agustus 2026",
+			Date:      "15 Agustus 2027",
 			Time:      "19:30 WIB",
 			Category:  "SIMFONI UTAMA",
 			BadgeCol:  "bg-blue-900/80 text-blue-200 border-blue-500/40",
@@ -251,7 +252,7 @@ func seedInitialData() {
 			Title:     "Malam Balet Klasik: Danau Angsa (Swan Lake)",
 			Artist:    "Nusantara Ballet Company & Chamber Orchestra",
 			Venue:     "Teater Jakarta, Taman Ismail Marzuki",
-			Date:      "22 Agustus 2026",
+			Date:      "22 Agustus 2027",
 			Time:      "20:00 WIB",
 			Category:  "BALET & OPERA",
 			BadgeCol:  "bg-purple-900/80 text-purple-200 border-purple-500/40",
@@ -280,7 +281,7 @@ func seedInitialData() {
 			Title:     "Resital Piano Tunggal: Malam Chopin & Liszt",
 			Artist:    "Solois Pianis Muda Internasional",
 			Venue:     "Gedung Kesenian Jakarta, Pasar Baru",
-			Date:      "05 September 2026",
+			Date:      "05 September 2027",
 			Time:      "19:00 WIB",
 			Category:  "RESITAL PIANO",
 			BadgeCol:  "bg-emerald-900/80 text-emerald-200 border-emerald-500/40",
@@ -307,10 +308,16 @@ func seedInitialData() {
 	}
 
 	for _, e := range events {
+		parsedDt, _ := utils.ParseConcertDateTime(e.Date, e.Time)
+		var eventDtVal interface{}
+		if !parsedDt.IsZero() {
+			eventDtVal = parsedDt
+		}
+
 		_, err := tx.Exec(`
-			INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-		`, e.ID, e.Title, e.Artist, e.Venue, e.Date, e.Time, e.Category, e.BadgeCol, e.Image, e.AudioURL, e.Conductor, e.OpenGate, e.Address, e.Organizer, e.Subtitle, e.Rundown, e.Desc)
+			INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description, event_date_time)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		`, e.ID, e.Title, e.Artist, e.Venue, e.Date, e.Time, e.Category, e.BadgeCol, e.Image, e.AudioURL, e.Conductor, e.OpenGate, e.Address, e.Organizer, e.Subtitle, e.Rundown, e.Desc, eventDtVal)
 		if err != nil {
 			log.Printf("Err insert event: %v", err)
 			return

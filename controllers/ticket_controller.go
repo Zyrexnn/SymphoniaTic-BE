@@ -114,6 +114,24 @@ func (c *TicketController) CheckInTicket(ctx *fiber.Ctx) error {
 				Message: "Status tiket tidak valid untuk check-in",
 			})
 		}
+		if errors.Is(err, repositories.ErrEventClosed) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser telah ditutup oleh panitia dan tiket tidak dapat digunakan untuk check-in",
+			})
+		}
+		if errors.Is(err, repositories.ErrEventNotStarted) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Gerbang masuk (Open Gate) belum dibuka untuk konser ini",
+			})
+		}
+		if errors.Is(err, repositories.ErrEventExpired) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Tiket tidak dapat digunakan karena acara konser telah selesai",
+			})
+		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal memproses check-in tiket",

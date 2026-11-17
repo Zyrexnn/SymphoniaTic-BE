@@ -488,11 +488,13 @@ func TestOrderRepository_EnrichedQueriesAndRemindedCheckIn(t *testing.T) {
 					"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
 					"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
 					"status", "payment_method", "created_at",
+					"is_closed", "open_gate", "time", "event_date_time",
 				},
 				rows: [][]driver.Value{{
 					"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
-					"22 November 2026 @ 14:21 WIB", "VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com",
+					time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com",
 					"QR-SYM-100001", "REMINDED", "SANDBOX_PAYMENT", time.Now(),
+					false, "", "", time.Now().Add(-10 * time.Minute),
 				}},
 			}
 		},
@@ -504,6 +506,87 @@ func TestOrderRepository_EnrichedQueriesAndRemindedCheckIn(t *testing.T) {
 	if checkedIn.Status != "CHECKED_IN" {
 		t.Fatalf("Status setelah check-in seharusnya CHECKED_IN, dapat %s", checkedIn.Status)
 	}
+}
+
+func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Menolak check-in ketika konser ditutup (is_closed = true)", func(t *testing.T) {
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				return stubQueryResult{
+					columns: []string{
+						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
+						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+						"status", "payment_method", "created_at",
+						"is_closed", "open_gate", "time", "event_date_time",
+					},
+					rows: [][]driver.Value{{
+						"ord-1", "SYM-CLOSED", "usr-1", "evt-1", "Simfoni Ditutup", "Jakarta Orchestra", "Aula Simfonia",
+						time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
+						"QR-SYM-CLOSED", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+						true, "", "", time.Now().Add(-10 * time.Minute),
+					}},
+				}
+			},
+		}
+		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-CLOSED")
+		if !errors.Is(err, ErrEventClosed) {
+			t.Fatalf("Ekspektasi ErrEventClosed, dapat: %v", err)
+		}
+	})
+
+	t.Run("Menolak check-in ketika konser belum dimulai / open gate belum dibuka", func(t *testing.T) {
+		futureTime := time.Now().Add(24 * time.Hour)
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				return stubQueryResult{
+					columns: []string{
+						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
+						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+						"status", "payment_method", "created_at",
+						"is_closed", "open_gate", "time", "event_date_time",
+					},
+					rows: [][]driver.Value{{
+						"ord-2", "SYM-FUTURE", "usr-1", "evt-1", "Simfoni Besok", "Jakarta Orchestra", "Aula Simfonia",
+						futureTime.Format("2006-01-02") + " @ 19:30", "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
+						"QR-SYM-FUTURE", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+						false, "18:00", "19:30", futureTime,
+					}},
+				}
+			},
+		}
+		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-FUTURE")
+		if !errors.Is(err, ErrEventNotStarted) {
+			t.Fatalf("Ekspektasi ErrEventNotStarted, dapat: %v", err)
+		}
+	})
+
+	t.Run("Menolak check-in ketika konser telah kedaluwarsa (> 6 jam setelah mulai)", func(t *testing.T) {
+		pastTime := time.Now().Add(-8 * time.Hour)
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				return stubQueryResult{
+					columns: []string{
+						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
+						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+						"status", "payment_method", "created_at",
+						"is_closed", "open_gate", "time", "event_date_time",
+					},
+					rows: [][]driver.Value{{
+						"ord-3", "SYM-EXPIRED", "usr-1", "evt-1", "Simfoni Kemarin", "Jakarta Orchestra", "Aula Simfonia",
+						pastTime.Format("2006-01-02") + " @ " + pastTime.Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
+						"QR-SYM-EXPIRED", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+						false, pastTime.Add(-1 * time.Hour).Format("15:04"), pastTime.Format("15:04"), pastTime,
+					}},
+				}
+			},
+		}
+		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-EXPIRED")
+		if !errors.Is(err, ErrEventExpired) {
+			t.Fatalf("Ekspektasi ErrEventExpired, dapat: %v", err)
+		}
+	})
 }
 
 func TestOrderRepository_UpdateOrderStatusQuotaRestoration(t *testing.T) {

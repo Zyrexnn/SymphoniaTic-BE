@@ -70,3 +70,77 @@ func TestIsTimeBefore(t *testing.T) {
 		})
 	}
 }
+
+func TestParseConcertDateTime(t *testing.T) {
+	cases := []struct {
+		name       string
+		dateStr    string
+		timeStr    string
+		expectYear int
+		expectMonth int
+		expectDay  int
+		expectHour int
+		expectMin  int
+		expectErr  bool
+	}{
+		{
+			name:        "Tanggal Indonesia lengkap dengan hari",
+			dateStr:     "Sabtu, 18 April 2026",
+			timeStr:     "19:30 WIB",
+			expectYear:  2026,
+			expectMonth: 4,
+			expectDay:   18,
+			expectHour:  19,
+			expectMin:   30,
+			expectErr:   false,
+		},
+		{
+			name:        "Tanggal tanpa nama hari",
+			dateStr:     "22 Agustus 2026",
+			timeStr:     "20:00",
+			expectYear:  2026,
+			expectMonth: 8,
+			expectDay:   22,
+			expectHour:  20,
+			expectMin:   0,
+			expectErr:   false,
+		},
+		{
+			name:        "Format ISO yyyy-mm-dd",
+			dateStr:     "2026-05-02",
+			timeStr:     "17:30 WIB",
+			expectYear:  2026,
+			expectMonth: 5,
+			expectDay:   2,
+			expectHour:  17,
+			expectMin:   30,
+			expectErr:   false,
+		},
+		{
+			name:        "Format tanggal tidak valid",
+			dateStr:     "Tanggal Rahasia",
+			timeStr:     "19:30",
+			expectErr:   true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dt, err := utils.ParseConcertDateTime(tc.dateStr, tc.timeStr)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("Ekspektasi error untuk (%q, %q), tapi nil", tc.dateStr, tc.timeStr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseConcertDateTime(%q, %q) gagal: %v", tc.dateStr, tc.timeStr, err)
+			}
+			if dt.Year() != tc.expectYear || int(dt.Month()) != tc.expectMonth || dt.Day() != tc.expectDay ||
+				dt.Hour() != tc.expectHour || dt.Minute() != tc.expectMin {
+				t.Fatalf("Hasil tidak sesuai: %v", dt)
+			}
+		})
+	}
+}
+

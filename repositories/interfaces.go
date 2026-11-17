@@ -21,6 +21,8 @@ var (
 	ErrTicketAlreadyUsed = errors.New("tiket ini sudah pernah digunakan untuk check-in sebelumnya")
 	ErrTicketInvalid     = errors.New("tiket tidak valid karena telah dibatalkan atau di-refund")
 	ErrTicketNotIssued   = errors.New("status tiket tidak valid untuk check-in")
+	ErrEventNotStarted   = errors.New("gerbang masuk (open gate) untuk konser ini belum dibuka")
+	ErrEventExpired      = errors.New("tiket tidak dapat digunakan karena acara konser telah selesai")
 )
 
 type ErrOTPWrongCode struct {

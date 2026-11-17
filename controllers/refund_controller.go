@@ -126,6 +126,23 @@ func (c *RefundController) RequestRefundOTP(ctx *fiber.Ctx) error {
 		})
 	}
 
+	// Validasi cut-off waktu refund: ditolak jika konser sudah berlangsung atau kurang dari 24 jam sebelum acara
+	if concertDt, err := utils.ParseConcertDateTime(targetOrder.Date, targetOrder.EventTime); err == nil && !concertDt.IsZero() {
+		now := time.Now()
+		if now.After(concertDt) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Pengajuan refund tidak dapat dilakukan karena acara konser telah dimulai atau selesai",
+			})
+		}
+		if time.Until(concertDt) < 24*time.Hour {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Pengajuan refund ditutup maksimal 24 jam sebelum jadwal konser dimulai",
+			})
+		}
+	}
+
 	otpCode, err := utils.GenerateCryptoOTP()
 	if err != nil {
 		otpCode = fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)

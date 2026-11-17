@@ -190,6 +190,40 @@ func TestRefundController_RequestRefundOTP(t *testing.T) {
 		}
 	})
 
+	t.Run("Gagal (400 Bad Request) saat pengajuan refund kurang dari 24 jam sebelum konser", func(t *testing.T) {
+		soonConcert := time.Now().Add(5 * time.Hour)
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					OrderCode: "SYM-123456",
+					UserEmail: "user@example.com",
+					Status:    "ISSUED",
+					Date:      soonConcert.Format("2006-01-02"),
+					EventTime: soonConcert.Format("15:04 WIB"),
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{}
+
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		payload := models.RequestRefundOTPInput{
+			OrderCode: "SYM-123456",
+			UserEmail: "user@example.com",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/refunds/request-otp", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request untuk H-5 jam, dapat %d", resp.StatusCode)
+		}
+	})
+
 	t.Run("Gagal (429 Too Many Requests) saat permohonan OTP masih dalam masa cooldown 60 detik", func(t *testing.T) {
 		mockOrderRepo := &repositories.MockOrderRepository{
 			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {

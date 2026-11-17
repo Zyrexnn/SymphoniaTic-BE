@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
+	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -41,7 +42,8 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 			COALESCE(subtitle, ''), 
 			COALESCE(rundown, '[]'::jsonb), 
 			COALESCE(description, ''), 
-			COALESCE(is_closed, FALSE)
+			COALESCE(is_closed, FALSE),
+			event_date_time
 		FROM events
 		ORDER BY created_at ASC
 	`)
@@ -51,9 +53,11 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 	defer rows.Close()
 
 	var eventList []models.EventItem
+	now := time.Now()
 	for rows.Next() {
 		var eventItem models.EventItem
 		var rundownBytes []byte
+		var rawEventDateTime sql.NullTime
 
 		if err := rows.Scan(
 			&eventItem.ID,
@@ -74,10 +78,25 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 			&rundownBytes,
 			&eventItem.Description,
 			&eventItem.IsClosed,
+			&rawEventDateTime,
 		); err != nil {
 			return nil, fmt.Errorf("gagal membaca baris data konser: %w", err)
 		}
 		_ = json.Unmarshal(rundownBytes, &eventItem.Rundown)
+
+		if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
+			t := rawEventDateTime.Time
+			eventItem.EventDateTime = &t
+			if now.After(t) {
+				eventItem.IsClosed = true
+			}
+		} else if dt, err := utils.ParseConcertDateTime(eventItem.Date, eventItem.Time); err == nil && !dt.IsZero() {
+			eventItem.EventDateTime = &dt
+			if now.After(dt) {
+				eventItem.IsClosed = true
+			}
+		}
+
 		eventItem.Categories = []models.TicketCategory{}
 		eventList = append(eventList, eventItem)
 	}
@@ -110,6 +129,7 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 	var eventItem models.EventItem
 	var rundownBytes []byte
 
+	var rawEventDateTime sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
 		SELECT 
 			id, 
@@ -129,7 +149,8 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 			COALESCE(subtitle, ''), 
 			COALESCE(rundown, '[]'::jsonb), 
 			COALESCE(description, ''), 
-			COALESCE(is_closed, FALSE)
+			COALESCE(is_closed, FALSE),
+			event_date_time
 		FROM events
 		WHERE id = $1
 	`, id).Scan(
@@ -151,6 +172,7 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 		&rundownBytes,
 		&eventItem.Description,
 		&eventItem.IsClosed,
+		&rawEventDateTime,
 	)
 
 	if err != nil {
@@ -161,6 +183,20 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 	}
 
 	_ = json.Unmarshal(rundownBytes, &eventItem.Rundown)
+
+	now := time.Now()
+	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
+		t := rawEventDateTime.Time
+		eventItem.EventDateTime = &t
+		if now.After(t) {
+			eventItem.IsClosed = true
+		}
+	} else if dt, err := utils.ParseConcertDateTime(eventItem.Date, eventItem.Time); err == nil && !dt.IsZero() {
+		eventItem.EventDateTime = &dt
+		if now.After(dt) {
+			eventItem.IsClosed = true
+		}
+	}
 
 	categories, err := r.GetCategoriesByEventID(ctx, eventItem.ID)
 	if err != nil {
@@ -190,10 +226,15 @@ func (r *eventRepository) CreateEvent(ctx context.Context, req *models.CreateEve
 		rundownJSON = []byte("[]")
 	}
 
+	var parsedDateTime sql.NullTime
+	if dt, err := utils.ParseConcertDateTime(req.Date, req.Time); err == nil && !dt.IsZero() {
+		parsedDateTime = sql.NullTime{Time: dt, Valid: true}
+	}
+
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-	`, eventID, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, badgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description)
+		INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description, event_date_time)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+	`, eventID, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, badgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, parsedDateTime)
 
 	if err != nil {
 		return nil, fmt.Errorf("gagal menyimpan data konser: %w", err)
@@ -264,13 +305,19 @@ func (r *eventRepository) UpdateEvent(ctx context.Context, id string, req *model
 		rundownJSON = []byte("[]")
 	}
 
+	var parsedDateTime sql.NullTime
+	if dt, err := utils.ParseConcertDateTime(req.Date, req.Time); err == nil && !dt.IsZero() {
+		parsedDateTime = sql.NullTime{Time: dt, Valid: true}
+	}
+
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE events
 		SET title = $1, artist = $2, venue = $3, date = $4, time = $5, category = $6, 
 		    category_badge_color = $7, image = $8, audio_url = COALESCE(NULLIF($9, ''), audio_url), conductor = $10, 
-		    open_gate = $11, address = $12, organizer = $13, subtitle = $14, rundown = $15, description = $16
-		WHERE id = $17
-	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, strings.TrimSpace(req.AudioURL), req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, id)
+		    open_gate = $11, address = $12, organizer = $13, subtitle = $14, rundown = $15, description = $16,
+		    event_date_time = $17
+		WHERE id = $18
+	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, strings.TrimSpace(req.AudioURL), req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, parsedDateTime, id)
 
 	if err != nil {
 		return fmt.Errorf("gagal memperbarui konser: %w", err)

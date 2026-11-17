@@ -34,11 +34,12 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 
 	var evtTitle, evtArtist, evtVenue, evtDate, evtTime, evtOpenGate, evtAddress string
 	var evtClosed bool
+	var rawEventDateTime sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed
+		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed, event_date_time
 		FROM events
 		WHERE id = $1
-	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed)
+	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed, &rawEventDateTime)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -48,6 +49,17 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 
 	if evtClosed {
 		return nil, ErrEventClosed
+	}
+
+	now := time.Now()
+	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
+		if now.After(rawEventDateTime.Time) {
+			return nil, ErrEventClosed
+		}
+	} else if dt, parseErr := utils.ParseConcertDateTime(evtDate, evtTime); parseErr == nil && !dt.IsZero() {
+		if now.After(dt) {
+			return nil, ErrEventClosed
+		}
 	}
 
 	if req.UserName == "" && authenticatedUserID != "" {
@@ -94,7 +106,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	qrCode := fmt.Sprintf("QR-%s", orderCode)
 	totalPrice := price * float64(req.Quantity)
 	dateFull := fmt.Sprintf("%s @ %s", evtDate, evtTime)
-	now := time.Now()
+	now = time.Now()
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, status, payment_method, created_at)
@@ -210,20 +222,28 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 	}
 	defer tx.Rollback()
 
-	// Penguncian baris FOR UPDATE digunakan untuk memastikan tidak terjadi race condition atau double check-in saat pemindaian berulang secara simultan
+	// Penguncian baris FOR UPDATE OF o memastikan atomisitas status tiket tanpa mengunci baris tabel events yang dapat menimbulkan lock contention
 	var record models.OrderRecord
+	var evtClosed bool
+	var evtOpenGate, evtTime string
+	var rawEventDateTime sql.NullTime
+
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, order_code, COALESCE(user_id, ''), event_id, event_title, artist, venue, date, 
-		       category_name, quantity, total_price, user_name, user_email, qr_code, status, 
-		       COALESCE(payment_method, 'SANDBOX_PAYMENT'), created_at
-		FROM orders
-		WHERE LOWER(order_code) = LOWER($1)
-		FOR UPDATE
+		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at,
+		       e.is_closed, COALESCE(e.open_gate, ''), COALESCE(e.time, ''), e.event_date_time
+		FROM orders o
+		JOIN events e ON o.event_id = e.id
+		WHERE LOWER(o.order_code) = LOWER($1)
+		FOR UPDATE OF o
 	`, cleanCode).Scan(
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
-		&record.Artist, &record.Venue, &record.Date, &record.CategoryName, &record.Quantity,
-		&record.TotalPrice, &record.UserName, &record.UserEmail, &record.QRCode,
-		&record.Status, &record.PaymentMethod, &record.CreatedAt,
+		&record.Artist, &record.Venue, &record.Date,
+		&record.CategoryName, &record.Quantity, &record.TotalPrice,
+		&record.UserName, &record.UserEmail, &record.QRCode, &record.Status,
+		&record.PaymentMethod, &record.CreatedAt,
+		&evtClosed, &evtOpenGate, &evtTime, &rawEventDateTime,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -231,6 +251,9 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 		}
 		return nil, fmt.Errorf("gagal memverifikasi data tiket: %w", err)
 	}
+
+	record.OpenGate = evtOpenGate
+	record.EventTime = evtTime
 
 	switch strings.ToUpper(strings.TrimSpace(record.Status)) {
 	case "CHECKED_IN":
@@ -240,6 +263,44 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 	case "ISSUED", "VERIFIED", "REMINDED":
 	default:
 		return nil, ErrTicketNotIssued
+	}
+
+	if evtClosed {
+		return nil, ErrEventClosed
+	}
+
+	var eventDateTime time.Time
+	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
+		eventDateTime = rawEventDateTime.Time
+	} else if dt, parseErr := utils.ParseConcertDateTime(record.Date, evtTime); parseErr == nil && !dt.IsZero() {
+		eventDateTime = dt
+	}
+
+	var openGateTime time.Time
+	if strings.TrimSpace(evtOpenGate) != "" {
+		if ogt, parseErr := utils.ParseOpenGateDateTime(record.Date, evtOpenGate); parseErr == nil && !ogt.IsZero() {
+			openGateTime = ogt
+		} else if !eventDateTime.IsZero() {
+			if mins, ok := utils.ParseTimeToMinutes(evtOpenGate); ok {
+				y, m, d := eventDateTime.Date()
+				openGateTime = time.Date(y, m, d, mins/60, mins%60, 0, 0, eventDateTime.Location())
+			}
+		}
+	}
+	if openGateTime.IsZero() && !eventDateTime.IsZero() {
+		openGateTime = eventDateTime
+	}
+	if eventDateTime.IsZero() && !openGateTime.IsZero() {
+		eventDateTime = openGateTime
+	}
+
+	now := time.Now()
+	if !openGateTime.IsZero() && now.Before(openGateTime) {
+		return nil, ErrEventNotStarted
+	}
+
+	if !eventDateTime.IsZero() && now.After(eventDateTime.Add(6 * time.Hour)) {
+		return nil, ErrEventExpired
 	}
 
 	_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN' WHERE id = $1", record.ID)

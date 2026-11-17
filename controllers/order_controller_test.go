@@ -583,4 +583,97 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("Gagal (400 Bad Request) saat konser ditutup oleh panitia", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrEventClosed
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-CLOSED",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Konser telah ditutup oleh panitia dan tiket tidak dapat digunakan untuk check-in" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat gerbang masuk konser belum dibuka", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrEventNotStarted
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-NOT-STARTED",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Gerbang masuk (Open Gate) belum dibuka untuk konser ini" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat acara konser telah selesai (expired)", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrEventExpired
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{
+			Code: "SYM-EXPIRED",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Tiket tidak dapat digunakan karena acara konser telah selesai" {
+			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
 }
