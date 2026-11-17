@@ -34,6 +34,12 @@
             <div class="box">
                 <p class="venue-title">Lokasi &amp; Panduan Venue:</p>
                 <p class="venue-name"><strong>{{.Venue}}</strong>{{if .Address}}<br/><span style="font-size: 12px; color: #71717A;">{{.Address}}</span>{{end}}</p>
+                {{if or .Time .OpenGate}}
+                <div style="border-top: 1px solid #1D202D; padding-top: 12px; margin-bottom: 16px; font-size: 13px; color: #A1A1AA; line-height: 1.7;">
+                    {{if .OpenGate}}<div>Open Gate: <strong style="color: #FFFFFF;">{{.OpenGate}}</strong></div>{{end}}
+                    {{if .Time}}<div>Waktu Mulai: <strong style="color: #FFFFFF;">{{.Time}}</strong></div>{{end}}
+                </div>
+                {{end}}
                 <div class="btn-wrapper">
                     <a href="{{.MapLink}}" class="btn" target="_blank" rel="noopener noreferrer">Buka Petunjuk Peta Google Maps</a>
                 </div>

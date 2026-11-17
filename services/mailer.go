@@ -204,6 +204,9 @@ func SendETicketEmail(order models.OrderRecord) {
 		"Artist":       order.Artist,
 		"Venue":        order.Venue,
 		"Date":         order.Date,
+		"Time":         order.EventTime,
+		"OpenGate":     order.OpenGate,
+		"VenueAddress": order.VenueAddress,
 		"CategoryName": order.CategoryName,
 		"Quantity":     order.Quantity,
 		"TotalPrice":   order.TotalPrice,
@@ -225,12 +228,19 @@ func SendETicketEmail(order models.OrderRecord) {
 
 // SendEventReminderEmail mengirimkan pengingat H-1 konser dengan peta lokasi dan petunjuk pelaksanaan
 func SendEventReminderEmail(userEmail, userName, eventTitle, venue, address, date, orderCode string) {
+	SendEventReminderEmailWithSchedule(userEmail, userName, eventTitle, venue, address, date, "", "", orderCode)
+}
+
+// SendEventReminderEmailWithSchedule mengirimkan pengingat H-1 konser beserta rincian waktu mulai dan open gate
+func SendEventReminderEmailWithSchedule(userEmail, userName, eventTitle, venue, address, date, eventTime, openGate, orderCode string) {
 	mapLink := fmt.Sprintf("https://www.google.com/maps/search/?api=1&query=%s", fmt.Sprintf("%s %s", eventTitle, venue))
 	data := map[string]interface{}{
 		"UserName":   userName,
 		"EventTitle": eventTitle,
 		"OrderCode":  orderCode,
 		"Date":       date,
+		"Time":       eventTime,
+		"OpenGate":   openGate,
 		"Venue":      venue,
 		"Address":    address,
 		"MapLink":    mapLink,

@@ -53,6 +53,8 @@ func TestRenderTemplate_AllTemplates(t *testing.T) {
 				"Artist":       "Twilite Orchestra",
 				"Venue":        "Aula Simfonia Jakarta",
 				"Date":         "2026-12-15 19:30",
+				"Time":         "19:30 WIB",
+				"OpenGate":     "18:00 WIB",
 				"CategoryName": "VVIP Diamond",
 				"Quantity":     2,
 				"TotalPrice":   1500000.0,
@@ -63,6 +65,8 @@ func TestRenderTemplate_AllTemplates(t *testing.T) {
 				"ORD-TEST-999",
 				"Twilite Orchestra",
 				"Aula Simfonia Jakarta",
+				"19:30 WIB",
+				"18:00 WIB",
 				"VVIP Diamond",
 				"2 Tiket",
 				"Rp 1500000",
@@ -76,6 +80,8 @@ func TestRenderTemplate_AllTemplates(t *testing.T) {
 				"EventTitle": "Konser Resital Piano",
 				"OrderCode":  "ORD-REMIND-001",
 				"Date":       "2026-11-20 20:00",
+				"Time":       "20:00 WIB",
+				"OpenGate":   "18:30 WIB",
 				"Venue":      "Teater Besar TIM",
 				"Address":    "Jl. Cikini Raya No. 73",
 				"MapLink":    "https://maps.google.com/?q=Teater+Besar+TIM",
@@ -85,6 +91,8 @@ func TestRenderTemplate_AllTemplates(t *testing.T) {
 				"Konser Resital Piano",
 				"ORD-REMIND-001",
 				"2026-11-20 20:00",
+				"20:00 WIB",
+				"18:30 WIB",
 				"Teater Besar TIM",
 				"Jl. Cikini Raya No. 73",
 				"https://maps.google.com/?q=Teater",
@@ -271,6 +279,9 @@ func TestPublicSendFunctions(t *testing.T) {
 		Artist:       "Ludwig Orchestra",
 		Venue:        "Gedung Kesenian Jakarta",
 		Date:         "2026-12-01 19:00",
+		OpenGate:     "17:30 WIB",
+		EventTime:    "19:00 WIB",
+		VenueAddress: "Jl. Pasar Baru No. 1",
 		CategoryName: "VIP Gold",
 		Quantity:     1,
 		TotalPrice:   350000,
@@ -325,7 +336,7 @@ func TestPublicSendFunctions(t *testing.T) {
 	)
 
 	for _, mail := range sentMails {
-		if strings.Contains(mail.msg, "E-TICKET RESMI") && strings.Contains(mail.msg, "ORD-PUB-101") {
+		if strings.Contains(mail.msg, "E-TICKET RESMI") && strings.Contains(mail.msg, "ORD-PUB-101") && strings.Contains(mail.msg, "17:30 WIB") {
 			foundETicket = true
 		}
 		if strings.Contains(mail.msg, "PENGINGAT") && strings.Contains(mail.msg, "Gedung Kesenian Jakarta") {

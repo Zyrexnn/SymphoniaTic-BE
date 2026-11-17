@@ -58,6 +58,18 @@
                     <span class="label">Waktu:</span>
                     <span class="value">{{.Date}}</span>
                 </div>
+                {{if .Time}}
+                <div class="detail-row">
+                    <span class="label">Waktu Mulai:</span>
+                    <span class="value">{{.Time}}</span>
+                </div>
+                {{end}}
+                {{if .OpenGate}}
+                <div class="detail-row">
+                    <span class="label">Open Gate:</span>
+                    <span class="value">{{.OpenGate}}</span>
+                </div>
+                {{end}}
                 <div class="detail-row">
                     <span class="label">Kategori Tiket:</span>
                     <span class="value">{{.CategoryName}}</span>
