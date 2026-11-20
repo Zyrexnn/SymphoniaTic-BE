@@ -23,6 +23,139 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/categories/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui nama, harga, dan kuota dari kategori tiket konser yang sudah ada.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Ticket Categories"
+                ],
+                "summary": "Memperbarui kategori tiket konser (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Category ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Category Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UpdateTicketCategoryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Kategori tiket berhasil diperbarui",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Kategori tiket tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus satu kategori tiket konser berdasarkan ID kategori.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Ticket Categories"
+                ],
+                "summary": "Menghapus kategori tiket konser (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Category ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Kategori tiket berhasil dihapus",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Kategori tiket tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/dashboard": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengagregasi metrik analitik bisnis (total pendapatan, tiket terjual, sisa kuota, timeline bulanan).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Analytics"
+                ],
+                "summary": "Mengambil ringkasan metrik dashboard admin",
+                "responses": {
+                    "200": {
+                        "description": "Metrik admin berhasil diambil",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.AdminDashboardMetrics"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/admin/events": {
             "post": {
                 "security": [
@@ -80,6 +213,212 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/events/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui rincian metadata konser musik klasik berdasarkan ID konser.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Events Management"
+                ],
+                "summary": "Memperbarui data konser (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Event Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UpdateEventRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Event konser berhasil diperbarui",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Format request tidak valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Event konser tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menghapus acara konser dari sistem beserta seluruh kategori tiket yang berada di bawahnya.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Events Management"
+                ],
+                "summary": "Menghapus konser dan kategori tiket terkait (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Event konser dan kategori tiket terkait berhasil dihapus",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Event konser tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/events/{id}/categories": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menambahkan kelas tiket baru (misal: VIP, Regular) dengan kuota dan harga spesifik ke konser.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Ticket Categories"
+                ],
+                "summary": "Menambahkan kategori tiket baru ke konser (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Create Category Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CreateCategoryInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Kategori tiket berhasil ditambahkan",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.TicketCategory"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Nama, Harga, dan Kuota tiket wajib valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/events/{id}/toggle-close": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengubah status penjualan tiket konser antara terbuka atau ditutup secara instan.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Events Management"
+                ],
+                "summary": "Membuka atau menutup penjualan tiket konser (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status penutupan konser berhasil diperbarui",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Konser tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/login": {
             "post": {
                 "description": "Autentikasi khusus akun administrator untuk mengakses panel manajemen admin.",
@@ -125,6 +464,366 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Username atau Password Admin salah",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil riwayat seluruh pesanan dengan filter pencarian teks dan status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Orders Management"
+                ],
+                "summary": "Mengambil semua pesanan tiket (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search query (order code, name, email, event)",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by order status",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Daftar pesanan berhasil diambil",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.OrderRecord"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/orders/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui status pesanan tiket (misal: CHECKED_IN, REMINDED, REFUNDED) oleh admin atau petugas.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Orders Management"
+                ],
+                "summary": "Memperbarui status pesanan tiket (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Order Status Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UpdateOrderStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status pesanan berhasil diperbarui",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pesanan tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/refunds": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil seluruh permohonan refund tiket yang diajukan oleh pengguna.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Refund Management"
+                ],
+                "summary": "Mengambil semua permohonan refund (Admin)",
+                "responses": {
+                    "200": {
+                        "description": "Berhasil mengambil daftar permohonan refund",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.RefundRequestRecord"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/refunds/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Memperbarui status permohonan refund menjadi APPROVED, REJECTED, atau COMPLETED beserta catatan admin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Refund Management"
+                ],
+                "summary": "Menyetujui atau menolak permohonan refund (Admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Refund ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Refund Status Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UpdateRefundStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Status pengajuan refund berhasil diubah",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Status tidak valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Data refund tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/tickets/attendance-summary": {
+            "get": {
+                "description": "Menghitung jumlah tiket masuk (CHECKED_IN) dibanding total tiket aktif yang diterbitkan.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Tickets"
+                ],
+                "summary": "Ringkasan kehadiran penonton di gate (Admin / Petugas)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter berdasarkan ID Konser (opsional)",
+                        "name": "event_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ringkasan kehadiran berhasil dimuat",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.GateAttendanceSummary"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Gagal menghitung ringkasan kehadiran",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/tickets/checkin": {
+            "post": {
+                "description": "Memvalidasi dan mengubah status tiket menjadi CHECKED_IN secara atomik.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Tickets"
+                ],
+                "summary": "Check-in tiket konser (Admin / Petugas)",
+                "parameters": [
+                    {
+                        "description": "Ticket Check-In Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CheckInRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Check-in berhasil",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.OrderRecord"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Tiket sudah digunakan atau status tidak valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Tiket tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/upload": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Menyimpan file gambar ke direktori server lokal dan mengembalikan URL publik.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Events Management"
+                ],
+                "summary": "Mengunggah gambar poster/banner konser (Admin)",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File gambar poster (jpg/png/webp)",
+                        "name": "image",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "File gambar berhasil diunggah",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Gagal membaca file gambar",
                         "schema": {
                             "$ref": "#/definitions/models.APIResponse"
                         }
@@ -284,7 +983,7 @@ const docTemplate = `{
         },
         "/events": {
             "get": {
-                "description": "Mengambil daftar seluruh event/konser yang tersedia lengkap dengan kategori tiket dan rundown.",
+                "description": "Mengambil semua event konser yang terdaftar beserta kategori tiketnya.",
                 "consumes": [
                     "application/json"
                 ],
@@ -433,6 +1132,138 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Gagal memproses pemesanan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/refunds/request-otp": {
+            "post": {
+                "description": "Meminta kode OTP yang akan dikirimkan ke email pemilik tiket untuk validasi refund.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Refunds"
+                ],
+                "summary": "Meminta kode OTP untuk pengajuan refund",
+                "parameters": [
+                    {
+                        "description": "Request Refund OTP Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.RequestRefundOTPInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Kode OTP verifikasi refund telah dikirim",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Data request tidak valid / Tiket tidak memenuhi syarat refund",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Kode pesanan tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/refunds/status": {
+            "post": {
+                "description": "Mengecek status terkini (PENDING, APPROVED, REJECTED, COMPLETED) dari pengajuan refund.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Refunds"
+                ],
+                "summary": "Memeriksa status pengajuan refund tiket",
+                "parameters": [
+                    {
+                        "description": "Check Refund Status Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.CheckRefundStatusRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil mengambil status refund",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Data pengajuan refund tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/refunds/submit": {
+            "post": {
+                "description": "Mengirimkan detail rekening bank dan alasan refund setelah memverifikasi kode OTP.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Refunds"
+                ],
+                "summary": "Mengajukan formulir permohonan pengembalian dana (refund)",
+                "parameters": [
+                    {
+                        "description": "Submit Refund Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.SubmitRefundInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Permohonan pengembalian dana berhasil diajukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Data tidak lengkap atau OTP tidak valid",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Pengajuan refund tidak ditemukan",
                         "schema": {
                             "$ref": "#/definitions/models.APIResponse"
                         }
@@ -810,6 +1641,50 @@ const docTemplate = `{
                 }
             }
         },
+        "models.AdminDashboardMetrics": {
+            "type": "object",
+            "properties": {
+                "categoryDistribution": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.CategoryStat"
+                    }
+                },
+                "eventStats": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.EventRevenueStat"
+                    }
+                },
+                "recentOrders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.RecentOrderSummary"
+                    }
+                },
+                "remainingQuota": {
+                    "type": "integer"
+                },
+                "revenueTimeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TimelineStat"
+                    }
+                },
+                "ticketsSold": {
+                    "type": "integer"
+                },
+                "totalEvents": {
+                    "type": "integer"
+                },
+                "totalOrders": {
+                    "type": "integer"
+                },
+                "totalRevenue": {
+                    "type": "number"
+                }
+            }
+        },
         "models.AdminLoginRequest": {
             "type": "object",
             "properties": {
@@ -832,6 +1707,17 @@ const docTemplate = `{
                 }
             }
         },
+        "models.CategoryStat": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
         "models.ChangePasswordInput": {
             "type": "object",
             "properties": {
@@ -839,6 +1725,28 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "oldPassword": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.CheckInRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "orderCode": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.CheckRefundStatusRequest": {
+            "type": "object",
+            "properties": {
+                "orderCode": {
+                    "type": "string"
+                },
+                "userEmail": {
                     "type": "string"
                 }
             }
@@ -1010,6 +1918,40 @@ const docTemplate = `{
                 }
             }
         },
+        "models.EventRevenueStat": {
+            "type": "object",
+            "properties": {
+                "eventId": {
+                    "type": "string"
+                },
+                "revenue": {
+                    "type": "number"
+                },
+                "ticketsSold": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.GateAttendanceSummary": {
+            "type": "object",
+            "properties": {
+                "checkInPercentage": {
+                    "type": "number"
+                },
+                "remainingCheckIn": {
+                    "type": "integer"
+                },
+                "totalCheckedIn": {
+                    "type": "integer"
+                },
+                "totalTicketsIssued": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.OrderRecord": {
             "type": "object",
             "properties": {
@@ -1028,10 +1970,16 @@ const docTemplate = `{
                 "eventId": {
                     "type": "string"
                 },
+                "eventTime": {
+                    "type": "string"
+                },
                 "eventTitle": {
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "openGate": {
                     "type": "string"
                 },
                 "orderCode": {
@@ -1063,6 +2011,9 @@ const docTemplate = `{
                 },
                 "venue": {
                     "type": "string"
+                },
+                "venueAddress": {
+                    "type": "string"
                 }
             }
         },
@@ -1073,6 +2024,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.RecentOrderSummary": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "eventTitle": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "orderCode": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "totalPrice": {
+                    "type": "number"
+                },
+                "userName": {
                     "type": "string"
                 }
             }
@@ -1162,6 +2142,17 @@ const docTemplate = `{
                 }
             }
         },
+        "models.RequestRefundOTPInput": {
+            "type": "object",
+            "properties": {
+                "orderCode": {
+                    "type": "string"
+                },
+                "userEmail": {
+                    "type": "string"
+                }
+            }
+        },
         "models.RundownItem": {
             "type": "object",
             "properties": {
@@ -1169,6 +2160,32 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.SubmitRefundInput": {
+            "type": "object",
+            "properties": {
+                "accountHolder": {
+                    "type": "string"
+                },
+                "accountNumber": {
+                    "type": "string"
+                },
+                "bankName": {
+                    "type": "string"
+                },
+                "orderCode": {
+                    "type": "string"
+                },
+                "otpCode": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "userEmail": {
                     "type": "string"
                 }
             }
@@ -1199,6 +2216,84 @@ const docTemplate = `{
                 }
             }
         },
+        "models.TimelineStat": {
+            "type": "object",
+            "properties": {
+                "month": {
+                    "type": "string"
+                },
+                "revenue": {
+                    "type": "number"
+                },
+                "tickets": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.UpdateEventRequest": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "artist": {
+                    "type": "string"
+                },
+                "audioUrl": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "categoryBadgeColor": {
+                    "type": "string"
+                },
+                "conductor": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "image": {
+                    "type": "string"
+                },
+                "openGate": {
+                    "type": "string"
+                },
+                "organizer": {
+                    "type": "string"
+                },
+                "rundown": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.RundownItem"
+                    }
+                },
+                "subtitle": {
+                    "type": "string"
+                },
+                "time": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "venue": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.UpdateOrderStatusRequest": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "models.UpdateProfileInput": {
             "type": "object",
             "properties": {
@@ -1207,6 +2302,31 @@ const docTemplate = `{
                 },
                 "phone": {
                     "type": "string"
+                }
+            }
+        },
+        "models.UpdateRefundStatusRequest": {
+            "type": "object",
+            "properties": {
+                "adminNote": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.UpdateTicketCategoryRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number"
+                },
+                "quota": {
+                    "type": "integer"
                 }
             }
         },

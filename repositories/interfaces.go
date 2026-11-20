@@ -58,6 +58,7 @@ type OrderRepository interface {
 	GetAllOrders(ctx context.Context, searchQuery, statusFilter string) ([]models.OrderRecord, error)
 	UpdateOrderStatus(ctx context.Context, id, status string) error
 	GetAdminDashboardMetrics(ctx context.Context) (*models.AdminDashboardMetrics, error)
+	GetAttendanceSummary(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error)
 	GetUserDashboardSummary(ctx context.Context, userID, userEmail string) (*models.UserDashboardSummary, error)
 }
 

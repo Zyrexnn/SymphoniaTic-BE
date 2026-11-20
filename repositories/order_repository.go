@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -610,4 +611,38 @@ func (r *orderRepository) GetUserDashboardSummary(ctx context.Context, userID, u
 	}
 
 	return &summary, nil
+}
+
+func (r *orderRepository) GetAttendanceSummary(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error) {
+	var totalIssued int
+	var totalCheckedIn int
+
+	cleanEventID := strings.TrimSpace(eventID)
+	err := r.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN UPPER(status) IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN') THEN quantity ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN UPPER(status) = 'CHECKED_IN' THEN quantity ELSE 0 END), 0)
+		FROM orders
+		WHERE ($1 = '' OR event_id = $1)
+	`, cleanEventID).Scan(&totalIssued, &totalCheckedIn)
+	if err != nil {
+		return nil, fmt.Errorf("gagal menghitung ringkasan kehadiran gate: %w", err)
+	}
+
+	remaining := totalIssued - totalCheckedIn
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	percentage := 0.0
+	if totalIssued > 0 {
+		percentage = math.Round((float64(totalCheckedIn)/float64(totalIssued))*1000) / 10
+	}
+
+	return &models.GateAttendanceSummary{
+		TotalTicketsIssued: totalIssued,
+		TotalCheckedIn:     totalCheckedIn,
+		RemainingCheckIn:   remaining,
+		CheckInPercentage:  percentage,
+	}, nil
 }

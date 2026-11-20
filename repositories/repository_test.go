@@ -764,3 +764,51 @@ func TestRefundRepository_FiltersOTPSentDrafts(t *testing.T) {
 		}
 	}
 }
+
+func TestOrderRepository_GetAttendanceSummary(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Menghitung persentase kehadiran dan sisa tiket belum masuk", func(t *testing.T) {
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				if len(args) != 1 || args[0] != "evt-1" {
+					t.Errorf("Ekspektasi argumen eventID 'evt-1', dapat %+v", args)
+				}
+				return stubQueryResult{
+					columns: []string{"total_issued", "total_checked_in"},
+					rows:    [][]driver.Value{{int64(200), int64(137)}},
+				}
+			},
+		}
+		repo := NewOrderRepository(newStubDB(t, state))
+		summary, err := repo.GetAttendanceSummary(ctx, " evt-1 ")
+		if err != nil {
+			t.Fatalf("GetAttendanceSummary gagal: %v", err)
+		}
+		if summary.TotalTicketsIssued != 200 || summary.TotalCheckedIn != 137 || summary.RemainingCheckIn != 63 {
+			t.Fatalf("Angka ringkasan tidak sesuai: %+v", summary)
+		}
+		if summary.CheckInPercentage != 68.5 {
+			t.Fatalf("Ekspektasi persentase 68.5, dapat: %v", summary.CheckInPercentage)
+		}
+	})
+
+	t.Run("Mengembalikan 0 persen jika belum ada tiket terbit", func(t *testing.T) {
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				return stubQueryResult{
+					columns: []string{"total_issued", "total_checked_in"},
+					rows:    [][]driver.Value{{int64(0), int64(0)}},
+				}
+			},
+		}
+		repo := NewOrderRepository(newStubDB(t, state))
+		summary, err := repo.GetAttendanceSummary(ctx, "")
+		if err != nil {
+			t.Fatalf("GetAttendanceSummary gagal: %v", err)
+		}
+		if summary.CheckInPercentage != 0 || summary.RemainingCheckIn != 0 {
+			t.Fatalf("Ekspektasi 0 untuk data kosong, dapat: %+v", summary)
+		}
+	})
+}

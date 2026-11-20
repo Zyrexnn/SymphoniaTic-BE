@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,6 +27,7 @@ func setupOrderControllerTest(mockRepo *repositories.MockOrderRepository) *fiber
 	api.Patch("/admin/orders/:id/status", orderCtrl.UpdateOrderStatus)
 	api.Get("/tickets/lookup", ticketCtrl.LookupTicketByCode)
 	api.Post("/admin/tickets/checkin", ticketCtrl.CheckInTicket)
+	api.Get("/admin/tickets/attendance-summary", ticketCtrl.GetAttendanceSummary)
 
 	return app
 }
@@ -674,6 +676,67 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
 		if apiResp.Message != "Tiket tidak dapat digunakan karena acara konser telah selesai" {
 			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		}
+	})
+}
+
+func TestTicketController_GetAttendanceSummary(t *testing.T) {
+	t.Run("Sukses (200 OK) mengambil ringkasan kehadiran gate", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			GetAttendanceSummaryFunc: func(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error) {
+				if eventID != "evt-1" {
+					t.Errorf("Ekspektasi eventID evt-1, dapat %s", eventID)
+				}
+				return &models.GateAttendanceSummary{
+					TotalTicketsIssued: 100,
+					TotalCheckedIn:     45,
+					RemainingCheckIn:   55,
+					CheckInPercentage:  45.0,
+				}, nil
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		req := httptest.NewRequest("GET", "/api/v1/admin/tickets/attendance-summary?event_id=evt-1", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Status tidak sesuai: ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+
+		var apiResp struct {
+			Success bool                         `json:"success"`
+			Message string                       `json:"message"`
+			Data    models.GateAttendanceSummary `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+			t.Fatalf("Gagal decode JSON response: %v", err)
+		}
+		if !apiResp.Success {
+			t.Fatalf("Ekspektasi success true, dapat false")
+		}
+		if apiResp.Data.TotalTicketsIssued != 100 || apiResp.Data.TotalCheckedIn != 45 || apiResp.Data.RemainingCheckIn != 55 {
+			t.Fatalf("Data ringkasan kehadiran tidak sesuai: %+v", apiResp.Data)
+		}
+	})
+
+	t.Run("Gagal (500 Internal Server Error) jika database error", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			GetAttendanceSummaryFunc: func(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error) {
+				return nil, errors.New("koneksi database terputus")
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		req := httptest.NewRequest("GET", "/api/v1/admin/tickets/attendance-summary", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("Status tidak sesuai: ekspektasi 500 Internal Server Error, dapat %d", resp.StatusCode)
 		}
 	})
 }

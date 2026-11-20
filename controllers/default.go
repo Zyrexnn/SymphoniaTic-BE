@@ -119,6 +119,11 @@ func CheckInTicket(ctx *fiber.Ctx) error {
 	return defaultTicketCtrl.CheckInTicket(ctx)
 }
 
+func GetAttendanceSummary(ctx *fiber.Ctx) error {
+	ensureDefaultControllers()
+	return defaultTicketCtrl.GetAttendanceSummary(ctx)
+}
+
 func RequestRefundOTP(ctx *fiber.Ctx) error {
 	ensureDefaultControllers()
 	return defaultRefundCtrl.RequestRefundOTP(ctx)

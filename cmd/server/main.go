@@ -41,28 +41,18 @@ import (
 // @name Authorization
 // @description Type "Bearer <your_token>" to authenticate user/admin endpoints.
 
-func main() {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		log.Fatalf("Gagal memuat konfigurasi server: %v", err)
-	}
-
-	database.ConnectDBWithConfig(&cfg.Database)
-
-	services.InitMailerWorkerPool(&cfg.SMTP, 5, 200)
-
-	eventRepo := repositories.NewEventRepository(database.DB)
-	orderRepo := repositories.NewOrderRepository(database.DB)
-	refundRepo := repositories.NewRefundRepository(database.DB)
-
+func setupRouter(
+	cfg *config.Config,
+	eventRepo repositories.EventRepository,
+	orderRepo repositories.OrderRepository,
+	refundRepo repositories.RefundRepository,
+) *fiber.App {
 	eventCtrl := controllers.NewEventController(eventRepo)
 	categoryCtrl := controllers.NewCategoryController(eventRepo)
 	orderCtrl := controllers.NewOrderController(orderRepo)
 	ticketCtrl := controllers.NewTicketController(orderRepo)
 	refundCtrl := controllers.NewRefundController(refundRepo)
 	adminCtrl := controllers.NewAdminController(orderRepo, &cfg.Auth)
-
-	controllers.InitDefaultControllers(database.DB, &cfg.Auth)
 
 	app := fiber.New(fiber.Config{
 		AppName: "SymphoniaTic Native Golang REST API Server",
@@ -121,33 +111,53 @@ func main() {
 	userGroup.Get("/dashboard-summary", controllers.GetUserDashboardSummary)
 	userGroup.Get("/refunds", controllers.GetUserRefunds)
 
-	// Admin Endpoints
 	admin := api.Group("/admin")
 	admin.Post("/login", adminCtrl.AdminLogin)
 
-	adminProtected := admin.Group("", middleware.RequireAdminAuth("ADMIN", "PETUGAS"))
-	adminProtected.Get("/dashboard", adminCtrl.GetAdminDashboardMetrics)
-	adminProtected.Post("/upload", adminCtrl.UploadImage)
+	// Pemisahan middleware per-rute (alih-alih Group("")) agar otorisasi ADMIN tidak bocor memblokir rute PETUGAS di prefix /admin yang sama
+	requireAdminOnly := middleware.RequireAdminAuth("ADMIN")
+	requireGateOrAdmin := middleware.RequireAdminAuth("ADMIN", "PETUGAS")
 
-	// Admin Event CRUD Routes
-	adminProtected.Post("/events", eventCtrl.CreateEvent)
-	adminProtected.Put("/events/:id", eventCtrl.UpdateEvent)
-	adminProtected.Patch("/events/:id/toggle-close", eventCtrl.ToggleEventClose)
-	adminProtected.Delete("/events/:id", eventCtrl.DeleteEvent)
+	admin.Get("/dashboard", requireAdminOnly, adminCtrl.GetAdminDashboardMetrics)
+	admin.Post("/upload", requireAdminOnly, adminCtrl.UploadImage)
 
-	// Admin Category CRUD Routes
-	adminProtected.Post("/events/:id/categories", categoryCtrl.CreateTicketCategory)
-	adminProtected.Put("/categories/:id", categoryCtrl.UpdateTicketCategory)
-	adminProtected.Delete("/categories/:id", categoryCtrl.DeleteTicketCategory)
+	admin.Post("/events", requireAdminOnly, eventCtrl.CreateEvent)
+	admin.Put("/events/:id", requireAdminOnly, eventCtrl.UpdateEvent)
+	admin.Patch("/events/:id/toggle-close", requireAdminOnly, eventCtrl.ToggleEventClose)
+	admin.Delete("/events/:id", requireAdminOnly, eventCtrl.DeleteEvent)
 
-	// Admin Orders & Tickets Management Routes
-	adminProtected.Get("/orders", orderCtrl.GetAllOrders)
-	adminProtected.Patch("/orders/:id/status", orderCtrl.UpdateOrderStatus)
-	adminProtected.Post("/tickets/checkin", ticketCtrl.CheckInTicket)
+	admin.Post("/events/:id/categories", requireAdminOnly, categoryCtrl.CreateTicketCategory)
+	admin.Put("/categories/:id", requireAdminOnly, categoryCtrl.UpdateTicketCategory)
+	admin.Delete("/categories/:id", requireAdminOnly, categoryCtrl.DeleteTicketCategory)
 
-	// Admin Refund Management Routes
-	adminProtected.Get("/refunds", refundCtrl.AdminGetAllRefunds)
-	adminProtected.Patch("/refunds/:id/status", refundCtrl.AdminUpdateRefundStatus)
+	admin.Get("/orders", requireGateOrAdmin, orderCtrl.GetAllOrders)
+	admin.Patch("/orders/:id/status", requireAdminOnly, orderCtrl.UpdateOrderStatus)
+	admin.Post("/tickets/checkin", requireGateOrAdmin, ticketCtrl.CheckInTicket)
+	admin.Get("/tickets/attendance-summary", requireGateOrAdmin, ticketCtrl.GetAttendanceSummary)
+
+	admin.Get("/refunds", requireAdminOnly, refundCtrl.AdminGetAllRefunds)
+	admin.Patch("/refunds/:id/status", requireAdminOnly, refundCtrl.AdminUpdateRefundStatus)
+
+	return app
+}
+
+func main() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Gagal memuat konfigurasi server: %v", err)
+	}
+
+	database.ConnectDBWithConfig(&cfg.Database)
+
+	services.InitMailerWorkerPool(&cfg.SMTP, 5, 200)
+
+	eventRepo := repositories.NewEventRepository(database.DB)
+	orderRepo := repositories.NewOrderRepository(database.DB)
+	refundRepo := repositories.NewRefundRepository(database.DB)
+
+	controllers.InitDefaultControllers(database.DB, &cfg.Auth)
+
+	app := setupRouter(cfg, eventRepo, orderRepo, refundRepo)
 
 	serverShutdown := make(chan struct{})
 	go func() {

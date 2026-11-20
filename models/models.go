@@ -322,3 +322,10 @@ type AdminDashboardMetrics struct {
 	RevenueTimeline      []TimelineStat       `json:"revenueTimeline"`
 	CategoryDistribution []CategoryStat       `json:"categoryDistribution"`
 }
+
+type GateAttendanceSummary struct {
+	TotalTicketsIssued int     `json:"totalTicketsIssued"`
+	TotalCheckedIn     int     `json:"totalCheckedIn"`
+	RemainingCheckIn   int     `json:"remainingCheckIn"`
+	CheckInPercentage  float64 `json:"checkInPercentage"`
+}

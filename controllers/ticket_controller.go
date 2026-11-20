@@ -145,3 +145,31 @@ func (c *TicketController) CheckInTicket(ctx *fiber.Ctx) error {
 		Data:    orderRecord,
 	})
 }
+
+// GetAttendanceSummary godoc
+// @Summary Ringkasan kehadiran penonton di gate (Admin / Petugas)
+// @Description Menghitung jumlah tiket masuk (CHECKED_IN) dibanding total tiket aktif yang diterbitkan.
+// @Tags Admin - Tickets
+// @Accept json
+// @Produce json
+// @Param event_id query string false "Filter berdasarkan ID Konser (opsional)"
+// @Success 200 {object} models.APIResponse{data=models.GateAttendanceSummary} "Ringkasan kehadiran berhasil dimuat"
+// @Failure 500 {object} models.APIResponse "Gagal menghitung ringkasan kehadiran"
+// @Router /admin/tickets/attendance-summary [get]
+func (c *TicketController) GetAttendanceSummary(ctx *fiber.Ctx) error {
+	eventID := strings.TrimSpace(ctx.Query("event_id"))
+	summary, err := c.repo.GetAttendanceSummary(ctx.Context(), eventID)
+	if err != nil {
+		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal memuat ringkasan kehadiran gate",
+			Error:   err.Error(),
+		})
+	}
+
+	return ctx.JSON(models.APIResponse{
+		Success: true,
+		Message: "Ringkasan kehadiran gate berhasil dimuat",
+		Data:    summary,
+	})
+}

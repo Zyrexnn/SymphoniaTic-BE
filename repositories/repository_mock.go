@@ -116,6 +116,7 @@ type MockOrderRepository struct {
 	GetAllOrdersFunc             func(ctx context.Context, searchQuery, statusFilter string) ([]models.OrderRecord, error)
 	UpdateOrderStatusFunc        func(ctx context.Context, id, status string) error
 	GetAdminDashboardMetricsFunc func(ctx context.Context) (*models.AdminDashboardMetrics, error)
+	GetAttendanceSummaryFunc     func(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error)
 	GetUserDashboardSummaryFunc  func(ctx context.Context, userID, userEmail string) (*models.UserDashboardSummary, error)
 }
 
@@ -185,6 +186,13 @@ func (m *MockOrderRepository) UpdateOrderStatus(ctx context.Context, id, status 
 func (m *MockOrderRepository) GetAdminDashboardMetrics(ctx context.Context) (*models.AdminDashboardMetrics, error) {
 	if m.GetAdminDashboardMetricsFunc != nil {
 		return m.GetAdminDashboardMetricsFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockOrderRepository) GetAttendanceSummary(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error) {
+	if m.GetAttendanceSummaryFunc != nil {
+		return m.GetAttendanceSummaryFunc(ctx, eventID)
 	}
 	return nil, nil
 }
