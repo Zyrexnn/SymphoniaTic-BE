@@ -141,7 +141,8 @@ Arsitektur SymphoniaTic Backend menerapkan pemisahan tanggung jawab berbasis *Do
 ```text
 be/
 ├── cmd/server/
-│   └── main.go              # Entrypoint aplikasi, konfigurasi CORS, dependency injection, graceful shutdown
+│   ├── main.go              # Entrypoint aplikasi, pemisahan otorisasi rute, CORS, graceful shutdown
+│   └── main_test.go         # Pengujian segregasi otorisasi role ADMIN vs PETUGAS pada router Fiber
 ├── config/
 │   ├── config.go            # Centralized strongly-typed configuration dengan validasi nilai default
 │   └── config_test.go       # Pengujian unit parsing konfigurasi
@@ -274,23 +275,28 @@ All endpoints in the SymphoniaTic REST API return consistent JSON structures usi
 | `POST` | `/api/v1/refunds/submit` | Submit refund form (OTP + bank account) | Public |
 | `POST` | `/api/v1/refunds/status` | Check refund status by order code and email | Public |
 
-### 6. Admin Panel Management (`/api/v1/admin`)
+### 6. Admin & Gate Officer Panel (`/api/v1/admin`)
+
+Otorisasi endpoint `/api/v1/admin` menerapkan prinsip *Least Privilege*: rute manajemen konser, finansial, dan refund dikunci eksklusif untuk `ADMIN`, sedangkan rute operasional pintu masuk dapat diakses oleh `ADMIN` dan `PETUGAS`.
+
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/admin/login` | Admin panel login | Public |
-| `GET` | `/api/v1/admin/dashboard` | Real-time analytics (revenue, tickets, breakdown) | Admin |
-| `POST` | `/api/v1/admin/upload` | Upload event poster image (multipart form data) | Admin |
-| `POST` | `/api/v1/admin/events` | Create new concert event and ticket categories | Admin |
-| `PUT` | `/api/v1/admin/events/:id` | Update concert event details | Admin |
-| `PATCH` | `/api/v1/admin/events/:id/toggle-close` | Open or close concert ticket sales | Admin |
-| `DELETE` | `/api/v1/admin/events/:id` | Delete concert event and categories | Admin |
-| `POST` | `/api/v1/admin/events/:id/categories` | Add ticket category to event | Admin |
-| `PUT` | `/api/v1/admin/categories/:id` | Update ticket category (price, name, quota) | Admin |
-| `DELETE` | `/api/v1/admin/categories/:id` | Delete ticket category | Admin |
-| `GET` | `/api/v1/admin/orders` | List all transactions (`?search=` and `?status=`) | Admin |
-| `PATCH` | `/api/v1/admin/orders/:id/status` | Update transaction status (`CHECKED_IN`, `REMINDED`, etc.) | Admin |
-| `GET` | `/api/v1/admin/refunds` | List all refund submissions | Admin |
-| `PATCH` | `/api/v1/admin/refunds/:id/status` | Approve or reject refund with auto quota restock | Admin |
+| `POST` | `/api/v1/admin/login` | Admin / Gate Officer login (menerbitkan JWT sesuai role) | Public |
+| `GET` | `/api/v1/admin/dashboard` | Real-time analytics (revenue, tickets, breakdown) | `ADMIN` |
+| `POST` | `/api/v1/admin/upload` | Upload event poster image (multipart form data) | `ADMIN` |
+| `POST` | `/api/v1/admin/events` | Create new concert event and ticket categories | `ADMIN` |
+| `PUT` | `/api/v1/admin/events/:id` | Update concert event details | `ADMIN` |
+| `PATCH` | `/api/v1/admin/events/:id/toggle-close` | Open or close concert ticket sales | `ADMIN` |
+| `DELETE` | `/api/v1/admin/events/:id` | Delete concert event and categories | `ADMIN` |
+| `POST` | `/api/v1/admin/events/:id/categories` | Add ticket category to event | `ADMIN` |
+| `PUT` | `/api/v1/admin/categories/:id` | Update ticket category (price, name, quota) | `ADMIN` |
+| `DELETE` | `/api/v1/admin/categories/:id` | Delete ticket category | `ADMIN` |
+| `GET` | `/api/v1/admin/orders` | List all transactions (`?search=` and `?status=`) | `ADMIN`, `PETUGAS` |
+| `PATCH` | `/api/v1/admin/orders/:id/status` | Update transaction status (`CHECKED_IN`, `REMINDED`, etc.) | `ADMIN` |
+| `POST` | `/api/v1/admin/tickets/checkin` | Atomic ticket QR check-in validation | `ADMIN`, `PETUGAS` |
+| `GET` | `/api/v1/admin/tickets/attendance-summary` | Gate attendance summary (`?event_id=` optional) | `ADMIN`, `PETUGAS` |
+| `GET` | `/api/v1/admin/refunds` | List all refund submissions | `ADMIN` |
+| `PATCH` | `/api/v1/admin/refunds/:id/status` | Approve or reject refund with auto quota restock | `ADMIN` |
 
 ---
 
