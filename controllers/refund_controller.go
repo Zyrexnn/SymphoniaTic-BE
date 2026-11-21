@@ -101,7 +101,7 @@ func (c *RefundController) RequestRefundOTP(ctx *fiber.Ctx) error {
 	}
 
 	normalizedOrderStatus := strings.ToUpper(strings.TrimSpace(targetOrder.Status))
-	if normalizedOrderStatus == "CHECKED_IN" {
+	if normalizedOrderStatus == "CHECKED_IN" || strings.TrimSpace(targetOrder.CheckedInSeats) != "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 			Success: false,
 			Message: "Tiket sudah di-scan (Check In) pada venue dan tidak dapat dikembalikan / refund",

@@ -795,4 +795,37 @@ func TestOrderController_CreateOrderSeatErrors(t *testing.T) {
 			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("Sukses (200 OK) partial check-in per kursi menampilkan progres jumlah masuk", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:             "ord-01",
+					OrderCode:      "SYM-987654",
+					Quantity:       2,
+					SeatNumbers:    "A-1, A-2",
+					CheckedInSeats: "A-1",
+					Status:         "ISSUED",
+				}, nil
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{Code: "QR-SYM-987654-A-1"}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if !apiResp.Success || apiResp.Message != "Check-in kursi berhasil (1/2 tiket telah masuk)" {
+			t.Fatalf("Pesan partial check-in tidak sesuai: %+v", apiResp)
+		}
+	})
 }

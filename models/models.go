@@ -1,6 +1,11 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
 
 type TicketCategory struct {
 	ID             string    `json:"id"`
@@ -51,6 +56,13 @@ type SeatItem struct {
 	Status     string `json:"status"`
 }
 
+type TicketItem struct {
+	SeatCode     string `json:"seatCode"`
+	AttendeeName string `json:"attendeeName"`
+	QRCode       string `json:"qrCode"`
+	Status       string `json:"status"`
+}
+
 type CreateOrderRequest struct {
 	EventID          string   `json:"eventId"`
 	TicketCategoryID string   `json:"ticketCategoryId"`
@@ -58,30 +70,34 @@ type CreateOrderRequest struct {
 	UserName         string   `json:"userName"`
 	UserEmail        string   `json:"userEmail"`
 	SeatNumbers      []string `json:"seatNumbers,omitempty"`
+	AttendeeNames    []string `json:"attendeeNames,omitempty"`
 }
 
 type OrderRecord struct {
-	ID            string    `json:"id"`
-	OrderCode     string    `json:"orderCode"`
-	UserID        string    `json:"userId,omitempty"`
-	EventID       string    `json:"eventId"`
-	EventTitle    string    `json:"eventTitle"`
-	Artist        string    `json:"artist"`
-	Venue         string    `json:"venue"`
-	Date          string    `json:"date"`
-	OpenGate      string    `json:"openGate,omitempty"`
-	EventTime     string    `json:"eventTime,omitempty"`
-	VenueAddress  string    `json:"venueAddress,omitempty"`
-	CategoryName  string    `json:"categoryName"`
-	Quantity      int       `json:"quantity"`
-	TotalPrice    float64   `json:"totalPrice"`
-	UserName      string    `json:"userName"`
-	UserEmail     string    `json:"userEmail"`
-	QRCode        string    `json:"qrCode"`
-	SeatNumbers   string    `json:"seatNumbers"`
-	Status        string    `json:"status"`
-	PaymentMethod string    `json:"paymentMethod"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID             string       `json:"id"`
+	OrderCode      string       `json:"orderCode"`
+	UserID         string       `json:"userId,omitempty"`
+	EventID        string       `json:"eventId"`
+	EventTitle     string       `json:"eventTitle"`
+	Artist         string       `json:"artist"`
+	Venue          string       `json:"venue"`
+	Date           string       `json:"date"`
+	OpenGate       string       `json:"openGate,omitempty"`
+	EventTime      string       `json:"eventTime,omitempty"`
+	VenueAddress   string       `json:"venueAddress,omitempty"`
+	CategoryName   string       `json:"categoryName"`
+	Quantity       int          `json:"quantity"`
+	TotalPrice     float64      `json:"totalPrice"`
+	UserName       string       `json:"userName"`
+	UserEmail      string       `json:"userEmail"`
+	QRCode         string       `json:"qrCode"`
+	SeatNumbers    string       `json:"seatNumbers"`
+	AttendeeNames  string       `json:"attendeeNames,omitempty"`
+	CheckedInSeats string       `json:"checkedInSeats,omitempty"`
+	Tickets        []TicketItem `json:"tickets,omitempty"`
+	Status         string       `json:"status"`
+	PaymentMethod  string       `json:"paymentMethod"`
+	CreatedAt      time.Time    `json:"createdAt"`
 }
 
 type APIResponse struct {
@@ -341,4 +357,109 @@ type GateAttendanceSummary struct {
 	TotalCheckedIn     int     `json:"totalCheckedIn"`
 	RemainingCheckIn   int     `json:"remainingCheckIn"`
 	CheckInPercentage  float64 `json:"checkInPercentage"`
+}
+
+func ParseCommaList(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func ResolveAttendeeNames(provided []string, fallbackName string, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	fallback := strings.TrimSpace(fallbackName)
+	resolved := make([]string, count)
+	for i := 0; i < count; i++ {
+		if i < len(provided) && strings.TrimSpace(provided[i]) != "" {
+			resolved[i] = strings.TrimSpace(provided[i])
+		} else {
+			resolved[i] = fallback
+		}
+	}
+	return resolved
+}
+
+func EncodeAttendeeNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(names)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func DecodeAttendeeNames(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var parsed []string
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+			return parsed
+		}
+	}
+	return ParseCommaList(trimmed)
+}
+
+// BuildOrderTickets menyusun daftar pass per kursi beserta status check-in dan nama pengunjung masing-masing
+func BuildOrderTickets(record *OrderRecord) {
+	if record == nil {
+		return
+	}
+	seats := ParseCommaList(record.SeatNumbers)
+	count := len(seats)
+	if count == 0 {
+		count = record.Quantity
+	}
+	if count <= 0 {
+		return
+	}
+
+	attendees := ResolveAttendeeNames(DecodeAttendeeNames(record.AttendeeNames), record.UserName, count)
+	checkedSet := make(map[string]bool)
+	for _, s := range ParseCommaList(record.CheckedInSeats) {
+		checkedSet[strings.ToUpper(s)] = true
+	}
+
+	isAllCheckedIn := strings.ToUpper(strings.TrimSpace(record.Status)) == "CHECKED_IN"
+	baseQR := strings.TrimSpace(record.QRCode)
+	if baseQR == "" && record.OrderCode != "" {
+		baseQR = "QR-" + record.OrderCode
+	}
+
+	tickets := make([]TicketItem, 0, count)
+	for i := 0; i < count; i++ {
+		seatCode := ""
+		if i < len(seats) {
+			seatCode = seats[i]
+		}
+		qr := baseQR
+		if seatCode != "" && record.OrderCode != "" {
+			qr = fmt.Sprintf("QR-%s-%s", record.OrderCode, seatCode)
+		}
+
+		itemStatus := record.Status
+		if isAllCheckedIn || (seatCode != "" && checkedSet[strings.ToUpper(seatCode)]) {
+			itemStatus = "CHECKED_IN"
+		}
+
+		tickets = append(tickets, TicketItem{
+			SeatCode:     seatCode,
+			AttendeeName: attendees[i],
+			QRCode:       qr,
+			Status:       itemStatus,
+		})
+	}
+	record.Tickets = tickets
 }

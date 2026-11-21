@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
@@ -139,9 +140,19 @@ func (c *TicketController) CheckInTicket(ctx *fiber.Ctx) error {
 		})
 	}
 
+	msg := "Check-in berhasil. Selamat menikmati pertunjukan!"
+	if orderRecord != nil && strings.ToUpper(orderRecord.Status) != "CHECKED_IN" && orderRecord.CheckedInSeats != "" {
+		checkedCount := len(models.ParseCommaList(orderRecord.CheckedInSeats))
+		totalCount := orderRecord.Quantity
+		if totalCount < checkedCount {
+			totalCount = checkedCount
+		}
+		msg = fmt.Sprintf("Check-in kursi berhasil (%d/%d tiket telah masuk)", checkedCount, totalCount)
+	}
+
 	return ctx.JSON(models.APIResponse{
 		Success: true,
-		Message: "Check-in berhasil. Selamat menikmati pertunjukan!",
+		Message: msg,
 		Data:    orderRecord,
 	})
 }

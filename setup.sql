@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS orders (
     user_email VARCHAR(255) NOT NULL,
     qr_code VARCHAR(255) NOT NULL,
     seat_numbers VARCHAR(255) DEFAULT '',
+    attendee_names TEXT DEFAULT '',
+    checked_in_seats VARCHAR(255) DEFAULT '',
     status VARCHAR(50) NOT NULL DEFAULT 'ISSUED',
     payment_method VARCHAR(50) DEFAULT 'SANDBOX_PAYMENT',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

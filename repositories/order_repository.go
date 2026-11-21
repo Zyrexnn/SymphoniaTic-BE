@@ -203,14 +203,16 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	orderID := uuid.New().String()
 	qrCode := fmt.Sprintf("QR-%s", orderCode)
 	seatNumbersStr := strings.Join(assignedSeatCodes, ", ")
+	resolvedAttendees := models.ResolveAttendeeNames(req.AttendeeNames, req.UserName, req.Quantity)
+	attendeeNamesJSON := models.EncodeAttendeeNames(resolvedAttendees)
 	totalPrice := price * float64(req.Quantity)
 	dateFull := fmt.Sprintf("%s @ %s", evtDate, evtTime)
 	now = time.Now()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, seat_numbers, status, payment_method, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ISSUED', 'SANDBOX_PAYMENT', $16)
-	`, orderID, orderCode, authenticatedUserID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode, seatNumbersStr, now)
+		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, seat_numbers, attendee_names, checked_in_seats, status, payment_method, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, '', 'ISSUED', 'SANDBOX_PAYMENT', $17)
+	`, orderID, orderCode, authenticatedUserID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode, seatNumbersStr, attendeeNamesJSON, now)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membuat data pesanan tiket: %w", err)
 	}
@@ -230,7 +232,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		return nil, fmt.Errorf("gagal konfirmasi transaksi pesanan tiket: %w", err)
 	}
 
-	return &models.OrderRecord{
+	orderRecord := &models.OrderRecord{
 		ID:            orderID,
 		OrderCode:     orderCode,
 		UserID:        authenticatedUserID,
@@ -249,16 +251,20 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		UserEmail:     req.UserEmail,
 		QRCode:        qrCode,
 		SeatNumbers:   seatNumbersStr,
+		AttendeeNames: attendeeNamesJSON,
 		Status:        "ISSUED",
 		PaymentMethod: "SANDBOX_PAYMENT",
 		CreatedAt:     now,
-	}, nil
+	}
+	models.BuildOrderTickets(orderRecord)
+	return orderRecord, nil
 }
 
 const orderWithEventSelect = `
 	SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 	       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-	       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''), o.status,
+	       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
+	       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
 	       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 	FROM orders o
 	LEFT JOIN events e ON o.event_id = e.id
@@ -274,21 +280,41 @@ func scanOrderWithEvent(scanner rowScanner) (models.OrderRecord, error) {
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date, &record.OpenGate, &record.EventTime, &record.VenueAddress,
 		&record.CategoryName, &record.Quantity, &record.TotalPrice, &record.UserName, &record.UserEmail,
-		&record.QRCode, &record.SeatNumbers, &record.Status, &record.PaymentMethod, &record.CreatedAt,
+		&record.QRCode, &record.SeatNumbers, &record.AttendeeNames, &record.CheckedInSeats, &record.Status,
+		&record.PaymentMethod, &record.CreatedAt,
 	)
+	if err == nil {
+		models.BuildOrderTickets(&record)
+	}
 	return record, err
 }
 
-func (r *orderRepository) GetOrderByCode(ctx context.Context, code string) (*models.OrderRecord, error) {
-	cleanCode := strings.TrimSpace(code)
-	orderCodeOnly := cleanCode
-	if strings.HasPrefix(strings.ToUpper(cleanCode), "QR-") {
-		orderCodeOnly = cleanCode[3:]
+func parseTicketLookupCode(raw string) (cleanCode, baseOrderCode, targetSeat string) {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(strings.ToUpper(trimmed), "QR-") {
+		trimmed = strings.TrimSpace(trimmed[3:])
 	}
+	cleanCode = trimmed
+	if strings.HasPrefix(strings.ToUpper(cleanCode), "SYM-") && len(cleanCode) > 4 {
+		rest := cleanCode[4:]
+		if idx2 := strings.Index(rest, "-"); idx2 > 0 && idx2+1 < len(rest) {
+			baseOrderCode = cleanCode[:4+idx2]
+			targetSeat = strings.ToUpper(strings.TrimSpace(rest[idx2+1:]))
+		}
+	}
+	return cleanCode, baseOrderCode, targetSeat
+}
+
+func (r *orderRepository) GetOrderByCode(ctx context.Context, code string) (*models.OrderRecord, error) {
+	cleanRaw := strings.TrimSpace(code)
+	cleanCode, baseOrderCode, _ := parseTicketLookupCode(cleanRaw)
 
 	record, err := scanOrderWithEvent(r.db.QueryRowContext(ctx, orderWithEventSelect+`
-		WHERE LOWER(o.order_code) = LOWER($1) OR LOWER(o.order_code) = LOWER($2) OR LOWER(o.qr_code) = LOWER($3)
-	`, cleanCode, orderCodeOnly, cleanCode))
+		WHERE LOWER(o.order_code) = LOWER($1)
+		   OR LOWER(o.order_code) = LOWER($2)
+		   OR LOWER(o.qr_code) = LOWER($3)
+		   OR ($4 <> '' AND LOWER(o.order_code) = LOWER($4))
+	`, cleanRaw, cleanCode, cleanRaw, baseOrderCode))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -318,11 +344,7 @@ func (r *orderRepository) LookupTicketByCode(ctx context.Context, code string) (
 }
 
 func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
-	cleanCode := strings.TrimSpace(orderCode)
-	if strings.HasPrefix(strings.ToUpper(cleanCode), "QR-") {
-		cleanCode = cleanCode[3:]
-	}
-	cleanCode = strings.TrimSpace(cleanCode)
+	cleanCode, baseOrderCode, targetSeat := parseTicketLookupCode(orderCode)
 	if cleanCode == "" {
 		return nil, ErrNotFound
 	}
@@ -341,18 +363,20 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 
 	err = tx.QueryRowContext(ctx, `
 		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
-		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''), o.status,
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
+		       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at,
 		       e.is_closed, COALESCE(e.open_gate, ''), COALESCE(e.time, ''), e.event_date_time
 		FROM orders o
 		JOIN events e ON o.event_id = e.id
-		WHERE LOWER(o.order_code) = LOWER($1)
+		WHERE LOWER(o.order_code) = LOWER($1) OR ($2 <> '' AND LOWER(o.order_code) = LOWER($2))
 		FOR UPDATE OF o
-	`, cleanCode).Scan(
+	`, cleanCode, baseOrderCode).Scan(
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date,
 		&record.CategoryName, &record.Quantity, &record.TotalPrice,
-		&record.UserName, &record.UserEmail, &record.QRCode, &record.SeatNumbers, &record.Status,
+		&record.UserName, &record.UserEmail, &record.QRCode, &record.SeatNumbers,
+		&record.AttendeeNames, &record.CheckedInSeats, &record.Status,
 		&record.PaymentMethod, &record.CreatedAt,
 		&evtClosed, &evtOpenGate, &evtTime, &rawEventDateTime,
 	)
@@ -414,7 +438,56 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 		return nil, ErrEventExpired
 	}
 
-	_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN' WHERE id = $1", record.ID)
+	isSubSeatScan := targetSeat != "" && !strings.EqualFold(record.OrderCode, cleanCode) && strings.EqualFold(record.OrderCode, baseOrderCode)
+	orderSeats := models.ParseCommaList(record.SeatNumbers)
+	checkedSeats := models.ParseCommaList(record.CheckedInSeats)
+
+	if isSubSeatScan && len(orderSeats) > 0 {
+		matchedSeat := ""
+		for _, s := range orderSeats {
+			if strings.EqualFold(s, targetSeat) {
+				matchedSeat = s
+				break
+			}
+		}
+		if matchedSeat == "" {
+			return nil, ErrNotFound
+		}
+		for _, cs := range checkedSeats {
+			if strings.EqualFold(cs, matchedSeat) {
+				return nil, ErrTicketAlreadyUsed
+			}
+		}
+		checkedSeats = append(checkedSeats, matchedSeat)
+		record.CheckedInSeats = strings.Join(checkedSeats, ", ")
+
+		checkedMap := make(map[string]bool, len(checkedSeats))
+		for _, cs := range checkedSeats {
+			checkedMap[strings.ToUpper(cs)] = true
+		}
+		allEntered := true
+		for _, s := range orderSeats {
+			if !checkedMap[strings.ToUpper(s)] {
+				allEntered = false
+				break
+			}
+		}
+
+		if allEntered {
+			_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN', checked_in_seats = $1 WHERE id = $2", record.CheckedInSeats, record.ID)
+			if err == nil {
+				record.Status = "CHECKED_IN"
+			}
+		} else {
+			_, err = tx.ExecContext(ctx, "UPDATE orders SET checked_in_seats = $1 WHERE id = $2", record.CheckedInSeats, record.ID)
+		}
+	} else {
+		record.CheckedInSeats = record.SeatNumbers
+		_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN', checked_in_seats = $1 WHERE id = $2", record.CheckedInSeats, record.ID)
+		if err == nil {
+			record.Status = "CHECKED_IN"
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("gagal memperbarui status check-in tiket: %w", err)
 	}
@@ -423,7 +496,7 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 		return nil, fmt.Errorf("gagal menyelesaikan transaksi check-in tiket: %w", err)
 	}
 
-	record.Status = "CHECKED_IN"
+	models.BuildOrderTickets(&record)
 	return &record, nil
 }
 
@@ -740,7 +813,13 @@ func (r *orderRepository) GetAttendanceSummary(ctx context.Context, eventID stri
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE(SUM(CASE WHEN UPPER(status) IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN') THEN quantity ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN UPPER(status) = 'CHECKED_IN' THEN quantity ELSE 0 END), 0)
+			COALESCE(SUM(
+				CASE
+					WHEN UPPER(status) = 'CHECKED_IN' THEN quantity
+					WHEN COALESCE(TRIM(checked_in_seats), '') <> '' THEN array_length(string_to_array(TRIM(checked_in_seats), ','), 1)
+					ELSE 0
+				END
+			), 0)
 		FROM orders
 		WHERE ($1 = '' OR event_id = $1)
 	`, cleanEventID).Scan(&totalIssued, &totalCheckedIn)
