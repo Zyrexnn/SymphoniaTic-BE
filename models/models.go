@@ -40,12 +40,24 @@ type EventItem struct {
 	Categories         []TicketCategory `json:"categories"`
 }
 
+type SeatItem struct {
+	ID         string `json:"id"`
+	EventID    string `json:"eventId"`
+	CategoryID string `json:"categoryId"`
+	SeatCode   string `json:"seatCode"`
+	RowLabel   string `json:"rowLabel"`
+	SeatNumber int    `json:"seatNumber"`
+	OrderID    string `json:"orderId,omitempty"`
+	Status     string `json:"status"`
+}
+
 type CreateOrderRequest struct {
-	EventID          string `json:"eventId"`
-	TicketCategoryID string `json:"ticketCategoryId"`
-	Quantity         int    `json:"quantity"`
-	UserName         string `json:"userName"`
-	UserEmail        string `json:"userEmail"`
+	EventID          string   `json:"eventId"`
+	TicketCategoryID string   `json:"ticketCategoryId"`
+	Quantity         int      `json:"quantity"`
+	UserName         string   `json:"userName"`
+	UserEmail        string   `json:"userEmail"`
+	SeatNumbers      []string `json:"seatNumbers,omitempty"`
 }
 
 type OrderRecord struct {
@@ -66,6 +78,7 @@ type OrderRecord struct {
 	UserName      string    `json:"userName"`
 	UserEmail     string    `json:"userEmail"`
 	QRCode        string    `json:"qrCode"`
+	SeatNumbers   string    `json:"seatNumbers"`
 	Status        string    `json:"status"`
 	PaymentMethod string    `json:"paymentMethod"`
 	CreatedAt     time.Time `json:"createdAt"`

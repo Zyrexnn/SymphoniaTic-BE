@@ -273,6 +273,13 @@ func (r *eventRepository) CreateEvent(ctx context.Context, req *models.CreateEve
 		})
 	}
 
+	if len(createdCategories) > 0 {
+		generatedSeats := utils.GenerateHallSeats(eventID, createdCategories)
+		if err := insertSeatsTx(ctx, tx, generatedSeats); err != nil {
+			return nil, fmt.Errorf("gagal membuat daftar nomor kursi konser: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("gagal konfirmasi transaksi pembuatan konser: %w", err)
 	}
@@ -379,9 +386,45 @@ func (r *eventRepository) ToggleEventClose(ctx context.Context, id string) (bool
 	return newState, nil
 }
 
+func insertSeatsTx(ctx context.Context, tx *sql.Tx, seats []models.SeatItem) error {
+	for _, s := range seats {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO seats (id, event_id, category_id, seat_code, row_label, seat_number, status)
+			VALUES ($1, $2, $3, $4, $5, $6, 'AVAILABLE')
+		`, s.ID, s.EventID, s.CategoryID, s.SeatCode, s.RowLabel, s.SeatNumber); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func fetchExistingSeatCodesTx(ctx context.Context, tx *sql.Tx, eventID string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT seat_code FROM seats WHERE event_id = $1 FOR UPDATE", eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var codes []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		codes = append(codes, code)
+	}
+	return codes, rows.Err()
+}
+
 func (r *eventRepository) AddCategory(ctx context.Context, eventID string, req *models.CreateCategoryInput) (*models.TicketCategory, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memulai transaksi tambah kategori: %w", err)
+	}
+	defer tx.Rollback()
+
 	var existingEventID string
-	err := r.db.QueryRowContext(ctx, "SELECT id FROM events WHERE id = $1", eventID).Scan(&existingEventID)
+	err = tx.QueryRowContext(ctx, "SELECT id FROM events WHERE id = $1", eventID).Scan(&existingEventID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -392,13 +435,26 @@ func (r *eventRepository) AddCategory(ctx context.Context, eventID string, req *
 	catID := fmt.Sprintf("cat-%s-%s", eventID, uuid.New().String()[:6])
 	now := time.Now()
 
-	_, err = r.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ticket_categories (id, event_id, name, price, quota, remaining_quota, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`, catID, eventID, req.Name, req.Price, req.Quota, req.Quota, now)
-
 	if err != nil {
 		return nil, fmt.Errorf("gagal menambahkan kategori tiket: %w", err)
+	}
+
+	existingCodes, err := fetchExistingSeatCodesTx(ctx, tx, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("gagal membaca daftar kursi eksisting: %w", err)
+	}
+
+	newSeats := utils.GenerateAdditionalCategorySeats(eventID, catID, req.Quota, existingCodes)
+	if err := insertSeatsTx(ctx, tx, newSeats); err != nil {
+		return nil, fmt.Errorf("gagal menghasilkan nomor kursi untuk kategori baru: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("gagal konfirmasi transaksi tambah kategori: %w", err)
 	}
 
 	return &models.TicketCategory{
@@ -413,29 +469,100 @@ func (r *eventRepository) AddCategory(ctx context.Context, eventID string, req *
 }
 
 func (r *eventRepository) UpdateCategory(ctx context.Context, catID string, req *models.UpdateTicketCategoryRequest) error {
-	// Formula GREATEST(0, remaining_quota + (req.Quota - quota)) menjaga sinkronisasi selisih kuota baru tanpa membiarkan kuota bernilai negatif jika tiket telah terjual melebihi kuota revisi
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE ticket_categories
-		SET name = $1, price = $2, remaining_quota = GREATEST(0, remaining_quota + ($3 - quota)), quota = $3
-		WHERE id = $4
-	`, req.Name, req.Price, req.Quota, catID)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("gagal memulai transaksi pembaruan kategori: %w", err)
+	}
+	defer tx.Rollback()
 
+	var eventID string
+	var oldQuota, oldRemaining int
+	err = tx.QueryRowContext(ctx, `
+		SELECT event_id, quota, remaining_quota
+		FROM ticket_categories
+		WHERE id = $1
+		FOR UPDATE
+	`, catID).Scan(&eventID, &oldQuota, &oldRemaining)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("gagal mengambil data kategori tiket: %w", err)
+	}
+
+	var bookedCount, totalSeats int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN status = 'BOOKED' THEN 1 ELSE 0 END), 0),
+			COUNT(*)
+		FROM seats
+		WHERE category_id = $1
+	`, catID).Scan(&bookedCount, &totalSeats); err != nil {
+		return fmt.Errorf("gagal memeriksa keterisian kursi kategori: %w", err)
+	}
+
+	if req.Quota < bookedCount {
+		return ErrQuotaBelowBooked
+	}
+
+	newRemaining := oldRemaining + (req.Quota - oldQuota)
+	if newRemaining < 0 {
+		newRemaining = 0
+	}
+	if totalSeats > 0 {
+		diff := req.Quota - totalSeats
+		if diff > 0 {
+			existingCodes, err := fetchExistingSeatCodesTx(ctx, tx, eventID)
+			if err != nil {
+				return fmt.Errorf("gagal membaca kursi eksisting: %w", err)
+			}
+			added := utils.GenerateAdditionalCategorySeats(eventID, catID, diff, existingCodes)
+			if err := insertSeatsTx(ctx, tx, added); err != nil {
+				return fmt.Errorf("gagal menambah kursi baru kategori: %w", err)
+			}
+		} else if diff < 0 {
+			trimCount := -diff
+			_, err := tx.ExecContext(ctx, `
+				DELETE FROM seats
+				WHERE id IN (
+					SELECT id FROM seats
+					WHERE category_id = $1 AND status = 'AVAILABLE'
+					ORDER BY row_label DESC, seat_number DESC
+					LIMIT $2
+				)
+			`, catID, trimCount)
+			if err != nil {
+				return fmt.Errorf("gagal memangkas kursi kategori yang belum terjual: %w", err)
+			}
+		}
+		newRemaining = req.Quota - bookedCount
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE ticket_categories
+		SET name = $1, price = $2, quota = $3, remaining_quota = $4
+		WHERE id = $5
+	`, req.Name, req.Price, req.Quota, newRemaining, catID)
 	if err != nil {
 		return fmt.Errorf("gagal memperbarui kategori tiket: %w", err)
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("gagal memeriksa baris kategori tiket yang diperbarui: %w", err)
-	}
-	if affected == 0 {
-		return ErrNotFound
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("gagal konfirmasi pembaruan kategori tiket: %w", err)
 	}
 
 	return nil
 }
 
 func (r *eventRepository) DeleteCategory(ctx context.Context, catID string) error {
+	var bookedCount int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM seats WHERE category_id = $1 AND status = 'BOOKED'", catID).Scan(&bookedCount); err != nil {
+		return fmt.Errorf("gagal memeriksa status kursi kategori: %w", err)
+	}
+	if bookedCount > 0 {
+		return ErrCategoryHasBookedSeats
+	}
+
 	result, err := r.db.ExecContext(ctx, "DELETE FROM ticket_categories WHERE id = $1", catID)
 	if err != nil {
 		return fmt.Errorf("gagal menghapus kategori tiket: %w", err)
@@ -510,4 +637,41 @@ func (r *eventRepository) GetCategoriesByEventID(ctx context.Context, eventID st
 	}
 
 	return categories, nil
+}
+
+func (r *eventRepository) GetSeatsByEventID(ctx context.Context, eventID string) ([]models.SeatItem, error) {
+	var existingID string
+	err := r.db.QueryRowContext(ctx, "SELECT id FROM events WHERE id = $1", eventID).Scan(&existingID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("gagal memeriksa data konser: %w", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, event_id, category_id, seat_code, row_label, seat_number, COALESCE(order_id, ''), status
+		FROM seats
+		WHERE event_id = $1
+		ORDER BY row_label ASC, seat_number ASC
+	`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("gagal mengambil daftar kursi konser: %w", err)
+	}
+	defer rows.Close()
+
+	seats := make([]models.SeatItem, 0)
+	for rows.Next() {
+		var s models.SeatItem
+		if err := rows.Scan(&s.ID, &s.EventID, &s.CategoryID, &s.SeatCode, &s.RowLabel, &s.SeatNumber, &s.OrderID, &s.Status); err != nil {
+			return nil, fmt.Errorf("gagal membaca data kursi: %w", err)
+		}
+		seats = append(seats, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("kesalahan iterasi baris kursi: %w", err)
+	}
+
+	return seats, nil
 }

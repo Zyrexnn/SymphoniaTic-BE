@@ -79,6 +79,15 @@ func (c *OrderController) CreateOrder(ctx *fiber.Ctx) error {
 		if errors.Is(err, repositories.ErrQuotaExceeded) {
 			return utils.ResponseBadRequest(ctx, err.Error())
 		}
+		if errors.Is(err, repositories.ErrInvalidSeatSelection) {
+			return utils.ResponseBadRequest(ctx, err.Error())
+		}
+		if errors.Is(err, repositories.ErrSeatUnavailable) {
+			return ctx.Status(fiber.StatusConflict).JSON(models.APIResponse{
+				Success: false,
+				Message: err.Error(),
+			})
+		}
 		return utils.ResponseInternalError(ctx, "Gagal membuat pesanan tiket", err)
 	}
 

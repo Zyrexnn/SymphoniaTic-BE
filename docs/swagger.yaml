@@ -137,6 +137,10 @@ definitions:
         type: string
       quantity:
         type: integer
+      seatNumbers:
+        items:
+          type: string
+        type: array
       ticketCategoryId:
         type: string
       userEmail:
@@ -241,6 +245,8 @@ definitions:
         type: string
       quantity:
         type: integer
+      seatNumbers:
+        type: string
       status:
         type: string
       totalPrice:
@@ -350,6 +356,25 @@ definitions:
       activity:
         type: string
       time:
+        type: string
+    type: object
+  models.SeatItem:
+    properties:
+      categoryId:
+        type: string
+      eventId:
+        type: string
+      id:
+        type: string
+      orderId:
+        type: string
+      rowLabel:
+        type: string
+      seatCode:
+        type: string
+      seatNumber:
+        type: integer
+      status:
         type: string
     type: object
   models.SubmitRefundInput:
@@ -1160,6 +1185,39 @@ paths:
           schema:
             $ref: '#/definitions/models.APIResponse'
       summary: Mengambil detail konser berdasarkan ID
+      tags:
+      - Public - Events
+  /events/{id}/seats:
+    get:
+      consumes:
+      - application/json
+      description: Mengambil seluruh kursi fisik pertunjukan beserta status AVAILABLE
+        atau BOOKED secara real-time.
+      parameters:
+      - description: Event ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Berhasil mengambil daftar kursi konser
+          schema:
+            allOf:
+            - $ref: '#/definitions/models.APIResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.SeatItem'
+                  type: array
+              type: object
+        "404":
+          description: Konser tidak ditemukan
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Mengambil daftar nomor kursi dan status keterisiannya
       tags:
       - Public - Events
   /orders:

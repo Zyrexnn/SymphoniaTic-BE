@@ -26,6 +26,7 @@ type MockEventRepository struct {
 	DeleteCategoryFunc          func(ctx context.Context, catID string) error
 	GetCategoriesByEventIDsFunc func(ctx context.Context, eventIDs []string) (map[string][]models.TicketCategory, error)
 	GetCategoriesByEventIDFunc  func(ctx context.Context, eventID string) ([]models.TicketCategory, error)
+	GetSeatsByEventIDFunc       func(ctx context.Context, eventID string) ([]models.SeatItem, error)
 }
 
 func (m *MockEventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem, error) {
@@ -101,6 +102,13 @@ func (m *MockEventRepository) GetCategoriesByEventIDs(ctx context.Context, event
 func (m *MockEventRepository) GetCategoriesByEventID(ctx context.Context, eventID string) ([]models.TicketCategory, error) {
 	if m.GetCategoriesByEventIDFunc != nil {
 		return m.GetCategoriesByEventIDFunc(ctx, eventID)
+	}
+	return nil, nil
+}
+
+func (m *MockEventRepository) GetSeatsByEventID(ctx context.Context, eventID string) ([]models.SeatItem, error) {
+	if m.GetSeatsByEventIDFunc != nil {
+		return m.GetSeatsByEventIDFunc(ctx, eventID)
 	}
 	return nil, nil
 }

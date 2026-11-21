@@ -34,7 +34,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 	baseQuery := `
 		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 		FROM orders o
 		LEFT JOIN events e ON o.event_id = e.id
@@ -61,7 +61,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 		rowScanErr := orderRows.Scan(
 			&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
 			&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
-			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.Status,
+			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers, &orderRecord.Status,
 			&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 		)
 		if rowScanErr != nil {
@@ -97,7 +97,7 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 	err := database.DB.QueryRow(`
 		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 		FROM orders o
 		LEFT JOIN events e ON o.event_id = e.id
@@ -105,7 +105,7 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 	`, requestedOrderCode, authenticatedUserID, authenticatedUserEmail).Scan(
 		&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
 		&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
-		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.Status,
+		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers, &orderRecord.Status,
 		&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 	)
 

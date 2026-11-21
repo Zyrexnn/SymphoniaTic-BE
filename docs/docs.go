@@ -1081,6 +1081,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/events/{id}/seats": {
+            "get": {
+                "description": "Mengambil seluruh kursi fisik pertunjukan beserta status AVAILABLE atau BOOKED secara real-time.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Public - Events"
+                ],
+                "summary": "Mengambil daftar nomor kursi dan status keterisiannya",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Berhasil mengambil daftar kursi konser",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/models.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/models.SeatItem"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Konser tidak ditemukan",
+                        "schema": {
+                            "$ref": "#/definitions/models.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/orders": {
             "post": {
                 "description": "Membuat pesanan tiket baru untuk event tertentu baik sebagai Guest maupun Logged-in User.",
@@ -1836,6 +1889,12 @@ const docTemplate = `{
                 "quantity": {
                     "type": "integer"
                 },
+                "seatNumbers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "ticketCategoryId": {
                     "type": "string"
                 },
@@ -1993,6 +2052,9 @@ const docTemplate = `{
                 },
                 "quantity": {
                     "type": "integer"
+                },
+                "seatNumbers": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -2160,6 +2222,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.SeatItem": {
+            "type": "object",
+            "properties": {
+                "categoryId": {
+                    "type": "string"
+                },
+                "eventId": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "orderId": {
+                    "type": "string"
+                },
+                "rowLabel": {
+                    "type": "string"
+                },
+                "seatCode": {
+                    "type": "string"
+                },
+                "seatNumber": {
+                    "type": "integer"
+                },
+                "status": {
                     "type": "string"
                 }
             }

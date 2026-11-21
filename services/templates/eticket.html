@@ -74,6 +74,12 @@
                     <span class="label">Kategori Tiket:</span>
                     <span class="value">{{.CategoryName}}</span>
                 </div>
+                {{if .SeatNumbers}}
+                <div class="detail-row">
+                    <span class="label">Nomor Kursi:</span>
+                    <span class="value" style="font-family: ui-monospace, monospace; font-weight: 700;">{{.SeatNumbers}}</span>
+                </div>
+                {{end}}
                 <div class="detail-row">
                     <span class="label">Jumlah Tiket:</span>
                     <span class="value">{{.Quantity}} Tiket</span>

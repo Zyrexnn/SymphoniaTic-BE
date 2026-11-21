@@ -82,6 +82,7 @@ func setupRouter(
 	// Public Endpoints
 	api.Get("/events", eventCtrl.GetEvents)
 	api.Get("/events/:id", eventCtrl.GetEventByID)
+	api.Get("/events/:id/seats", eventCtrl.GetEventSeats)
 	api.Post("/orders", orderCtrl.CreateOrder)
 	api.Get("/tickets/lookup", ticketCtrl.LookupTicketByCode)
 

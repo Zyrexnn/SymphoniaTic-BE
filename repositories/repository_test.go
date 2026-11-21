@@ -426,7 +426,7 @@ func orderStubColumns() []string {
 	return []string{
 		"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
 		"open_gate", "event_time", "venue_address", "category_name", "quantity", "total_price",
-		"user_name", "user_email", "qr_code", "status", "payment_method", "created_at",
+		"user_name", "user_email", "qr_code", "seat_numbers", "status", "payment_method", "created_at",
 	}
 }
 
@@ -435,7 +435,7 @@ func sampleOrderRow(status string) []driver.Value {
 		"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 		"22 November 2026 @ 14:21 WIB", "13:21 WIB", "14:21 WIB", "Jl. Industri No. 1",
 		"VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com", "QR-SYM-100001",
-		status, "SANDBOX_PAYMENT", time.Now(),
+		"A-1, A-2", status, "SANDBOX_PAYMENT", time.Now(),
 	}
 }
 
@@ -486,14 +486,14 @@ func TestOrderRepository_EnrichedQueriesAndRemindedCheckIn(t *testing.T) {
 			return stubQueryResult{
 				columns: []string{
 					"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
-					"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+					"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 					"status", "payment_method", "created_at",
 					"is_closed", "open_gate", "time", "event_date_time",
 				},
 				rows: [][]driver.Value{{
 					"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 					time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com",
-					"QR-SYM-100001", "REMINDED", "SANDBOX_PAYMENT", time.Now(),
+					"QR-SYM-100001", "A-1, A-2", "REMINDED", "SANDBOX_PAYMENT", time.Now(),
 					false, "", "", time.Now().Add(-10 * time.Minute),
 				}},
 			}
@@ -517,14 +517,14 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 				return stubQueryResult{
 					columns: []string{
 						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
-						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 						"status", "payment_method", "created_at",
 						"is_closed", "open_gate", "time", "event_date_time",
 					},
 					rows: [][]driver.Value{{
 						"ord-1", "SYM-CLOSED", "usr-1", "evt-1", "Simfoni Ditutup", "Jakarta Orchestra", "Aula Simfonia",
 						time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
-						"QR-SYM-CLOSED", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+						"QR-SYM-CLOSED", "A-1", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
 						true, "", "", time.Now().Add(-10 * time.Minute),
 					}},
 				}
@@ -543,14 +543,14 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 				return stubQueryResult{
 					columns: []string{
 						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
-						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 						"status", "payment_method", "created_at",
 						"is_closed", "open_gate", "time", "event_date_time",
 					},
 					rows: [][]driver.Value{{
 						"ord-2", "SYM-FUTURE", "usr-1", "evt-1", "Simfoni Besok", "Jakarta Orchestra", "Aula Simfonia",
 						futureTime.Format("2006-01-02") + " @ 19:30", "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
-						"QR-SYM-FUTURE", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+						"QR-SYM-FUTURE", "A-1", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
 						false, "18:00", "19:30", futureTime,
 					}},
 				}
@@ -569,14 +569,14 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 				return stubQueryResult{
 					columns: []string{
 						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
-						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code",
+						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 						"status", "payment_method", "created_at",
 						"is_closed", "open_gate", "time", "event_date_time",
 					},
 					rows: [][]driver.Value{{
 						"ord-3", "SYM-EXPIRED", "usr-1", "evt-1", "Simfoni Kemarin", "Jakarta Orchestra", "Aula Simfonia",
 						pastTime.Format("2006-01-02") + " @ " + pastTime.Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
-						"QR-SYM-EXPIRED", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+						"QR-SYM-EXPIRED", "A-1", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
 						false, pastTime.Add(-1 * time.Hour).Format("15:04"), pastTime.Format("15:04"), pastTime,
 					}},
 				}
@@ -811,4 +811,170 @@ func TestOrderRepository_GetAttendanceSummary(t *testing.T) {
 			t.Fatalf("Ekspektasi 0 untuk data kosong, dapat: %+v", summary)
 		}
 	})
+}
+
+func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
+	ctx := context.Background()
+	futureDate := time.Now().Add(48 * time.Hour)
+
+	t.Run("Berhasil memesan dengan nomor kursi pilihan dan mengunci baris kursi FOR UPDATE", func(t *testing.T) {
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				switch {
+				case strings.Contains(query, "FROM events"):
+					return stubQueryResult{
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+					}
+				case strings.Contains(query, "FROM ticket_categories"):
+					return stubQueryResult{
+						columns: []string{"id", "event_id", "name", "price", "quota", "remaining_quota"},
+						rows:    [][]driver.Value{{"cat-vip", "evt-1", "VIP Pit", float64(750000), int64(14), int64(14)}},
+					}
+				case strings.Contains(query, "FROM seats"):
+					return stubQueryResult{
+						columns: []string{"id", "seat_code", "category_id", "status"},
+						rows: [][]driver.Value{
+							{"seat-1", "A-1", "cat-vip", "AVAILABLE"},
+							{"seat-2", "A-2", "cat-vip", "AVAILABLE"},
+						},
+					}
+				default:
+					return stubQueryResult{}
+				}
+			},
+		}
+		repo := NewOrderRepository(newStubDB(t, state))
+		rec, err := repo.CreateOrder(ctx, &models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         2,
+			UserName:         "Agustin",
+			UserEmail:        "agus@gmail.com",
+			SeatNumbers:      []string{"A-1", "A-2"},
+		}, "")
+		if err != nil {
+			t.Fatalf("CreateOrder gagal: %v", err)
+		}
+		if rec.SeatNumbers != "A-1, A-2" {
+			t.Fatalf("Ekspektasi SeatNumbers 'A-1, A-2', dapat %q", rec.SeatNumbers)
+		}
+
+		var hasSeatForUpdate, hasSeatBookUpdate bool
+		for _, c := range state.calls {
+			if strings.Contains(c.query, "FROM seats") && strings.Contains(c.query, "FOR UPDATE") {
+				hasSeatForUpdate = true
+			}
+			if strings.Contains(c.query, "UPDATE seats") && strings.Contains(c.query, "BOOKED") {
+				hasSeatBookUpdate = true
+			}
+		}
+		if !hasSeatForUpdate {
+			t.Fatal("CreateOrder wajib mengunci baris kursi dengan FOR UPDATE")
+		}
+		if !hasSeatBookUpdate {
+			t.Fatal("CreateOrder wajib mengubah status kursi menjadi BOOKED")
+		}
+	})
+
+	t.Run("Menolak pemesanan apabila kursi sudah berstatus BOOKED (race condition protection)", func(t *testing.T) {
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				switch {
+				case strings.Contains(query, "FROM events"):
+					return stubQueryResult{
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+					}
+				case strings.Contains(query, "FROM ticket_categories"):
+					return stubQueryResult{
+						columns: []string{"id", "event_id", "name", "price", "quota", "remaining_quota"},
+						rows:    [][]driver.Value{{"cat-vip", "evt-1", "VIP Pit", float64(750000), int64(14), int64(14)}},
+					}
+				case strings.Contains(query, "FROM seats"):
+					return stubQueryResult{
+						columns: []string{"id", "seat_code", "category_id", "status"},
+						rows:    [][]driver.Value{{"seat-1", "A-1", "cat-vip", "BOOKED"}},
+					}
+				default:
+					return stubQueryResult{}
+				}
+			},
+		}
+		repo := NewOrderRepository(newStubDB(t, state))
+		_, err := repo.CreateOrder(ctx, &models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         1,
+			UserName:         "Agustin",
+			UserEmail:        "agus@gmail.com",
+			SeatNumbers:      []string{"A-1"},
+		}, "")
+		if !errors.Is(err, ErrSeatUnavailable) {
+			t.Fatalf("Ekspektasi ErrSeatUnavailable, dapat: %v", err)
+		}
+	})
+
+	t.Run("Menolak pemesanan jika jumlah nomor kursi tidak sesuai quantity", func(t *testing.T) {
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				switch {
+				case strings.Contains(query, "FROM events"):
+					return stubQueryResult{
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+					}
+				case strings.Contains(query, "FROM ticket_categories"):
+					return stubQueryResult{
+						columns: []string{"id", "event_id", "name", "price", "quota", "remaining_quota"},
+						rows:    [][]driver.Value{{"cat-vip", "evt-1", "VIP Pit", float64(750000), int64(14), int64(14)}},
+					}
+				default:
+					return stubQueryResult{}
+				}
+			},
+		}
+		repo := NewOrderRepository(newStubDB(t, state))
+		_, err := repo.CreateOrder(ctx, &models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         2,
+			UserName:         "Agustin",
+			UserEmail:        "agus@gmail.com",
+			SeatNumbers:      []string{"A-1"},
+		}, "")
+		if !errors.Is(err, ErrInvalidSeatSelection) {
+			t.Fatalf("Ekspektasi ErrInvalidSeatSelection, dapat: %v", err)
+		}
+	})
+}
+
+func TestEventRepository_GetSeatsByEventID(t *testing.T) {
+	ctx := context.Background()
+	state := &stubDBState{
+		queryRouter: func(query string, args []driver.Value) stubQueryResult {
+			if strings.Contains(query, "FROM events") {
+				return stubQueryResult{
+					columns: []string{"id"},
+					rows:    [][]driver.Value{{"evt-1"}},
+				}
+			}
+			return stubQueryResult{
+				columns: []string{"id", "event_id", "category_id", "seat_code", "row_label", "seat_number", "order_id", "status"},
+				rows: [][]driver.Value{
+					{"s1", "evt-1", "cat-vip", "A-1", "A", int64(1), "", "AVAILABLE"},
+					{"s2", "evt-1", "cat-vip", "A-2", "A", int64(2), "ord-1", "BOOKED"},
+				},
+			}
+		},
+	}
+
+	repo := NewEventRepository(newStubDB(t, state))
+	seats, err := repo.GetSeatsByEventID(ctx, "evt-1")
+	if err != nil {
+		t.Fatalf("GetSeatsByEventID gagal: %v", err)
+	}
+	if len(seats) != 2 || seats[0].SeatCode != "A-1" || seats[1].Status != "BOOKED" {
+		t.Fatalf("Data kursi tidak sesuai: %+v", seats)
+	}
 }

@@ -22,6 +22,7 @@ func setupEventControllerTest(mockRepo *repositories.MockEventRepository) *fiber
 	api := app.Group("/api/v1")
 	api.Get("/events", eventCtrl.GetEvents)
 	api.Get("/events/:id", eventCtrl.GetEventByID)
+	api.Get("/events/:id/seats", eventCtrl.GetEventSeats)
 	api.Post("/admin/events", eventCtrl.CreateEvent)
 	api.Put("/admin/events/:id", eventCtrl.UpdateEvent)
 	api.Delete("/admin/events/:id", eventCtrl.DeleteEvent)
@@ -595,6 +596,82 @@ func TestCategoryController_Management(t *testing.T) {
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("Status tidak sesuai: ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) ketika mengurangi kuota kategori di bawah jumlah kursi terjual", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			UpdateCategoryFunc: func(ctx context.Context, catID string, req *models.UpdateTicketCategoryRequest) error {
+				return repositories.ErrQuotaBelowBooked
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		payload := models.UpdateTicketCategoryRequest{Name: "VIP", Price: 750000, Quota: 1}
+		bodyBytes, _ := json.Marshal(payload)
+		req := httptest.NewRequest("PUT", "/api/v1/admin/categories/cat-01", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) ketika menghapus kategori yang memiliki kursi terjual", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			DeleteCategoryFunc: func(ctx context.Context, catID string) error {
+				return repositories.ErrCategoryHasBookedSeats
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("DELETE", "/api/v1/admin/categories/cat-01", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestEventController_GetEventSeats(t *testing.T) {
+	t.Run("Sukses (200 OK) mengembalikan daftar kursi konser", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			GetSeatsByEventIDFunc: func(ctx context.Context, eventID string) ([]models.SeatItem, error) {
+				return []models.SeatItem{
+					{ID: "s1", EventID: eventID, CategoryID: "cat-1", SeatCode: "A-1", RowLabel: "A", SeatNumber: 1, Status: "AVAILABLE"},
+					{ID: "s2", EventID: eventID, CategoryID: "cat-1", SeatCode: "A-2", RowLabel: "A", SeatNumber: 2, Status: "BOOKED"},
+				}, nil
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("GET", "/api/v1/events/evt-1/seats", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (404 Not Found) jika konser tidak ditemukan", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			GetSeatsByEventIDFunc: func(ctx context.Context, eventID string) ([]models.SeatItem, error) {
+				return nil, repositories.ErrNotFound
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("GET", "/api/v1/events/evt-404/seats", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("Ekspektasi 404 Not Found, dapat %d", resp.StatusCode)
 		}
 	})
 }

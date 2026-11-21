@@ -26,6 +26,7 @@ func setupTestApp(t *testing.T) *fiber.App {
 		return nil
 	}
 	_, _ = database.DB.Exec("UPDATE ticket_categories SET remaining_quota = quota WHERE id = 'c1-vip'")
+	_, _ = database.DB.Exec("UPDATE seats SET status = 'AVAILABLE', order_id = NULL WHERE category_id = 'c1-vip'")
 
 	app := fiber.New()
 	api := app.Group("/api/v1")

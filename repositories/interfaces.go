@@ -21,8 +21,12 @@ var (
 	ErrTicketAlreadyUsed = errors.New("tiket ini sudah pernah digunakan untuk check-in sebelumnya")
 	ErrTicketInvalid     = errors.New("tiket tidak valid karena telah dibatalkan atau di-refund")
 	ErrTicketNotIssued   = errors.New("status tiket tidak valid untuk check-in")
-	ErrEventNotStarted   = errors.New("gerbang masuk (open gate) untuk konser ini belum dibuka")
-	ErrEventExpired      = errors.New("tiket tidak dapat digunakan karena acara konser telah selesai")
+	ErrEventNotStarted        = errors.New("gerbang masuk (open gate) untuk konser ini belum dibuka")
+	ErrEventExpired           = errors.New("tiket tidak dapat digunakan karena acara konser telah selesai")
+	ErrSeatUnavailable        = errors.New("salah satu kursi yang dipilih sudah dipesan oleh penonton lain")
+	ErrInvalidSeatSelection   = errors.New("pilihan nomor kursi tidak valid atau tidak sesuai dengan jumlah dan kategori tiket")
+	ErrCategoryHasBookedSeats = errors.New("kategori tidak dapat dihapus karena sudah memiliki kursi yang terjual")
+	ErrQuotaBelowBooked       = errors.New("kuota baru tidak boleh lebih kecil dari jumlah kursi yang sudah terjual")
 )
 
 type ErrOTPWrongCode struct {
@@ -45,6 +49,7 @@ type EventRepository interface {
 	DeleteCategory(ctx context.Context, catID string) error
 	GetCategoriesByEventIDs(ctx context.Context, eventIDs []string) (map[string][]models.TicketCategory, error)
 	GetCategoriesByEventID(ctx context.Context, eventID string) ([]models.TicketCategory, error)
+	GetSeatsByEventID(ctx context.Context, eventID string) ([]models.SeatItem, error)
 }
 
 type OrderRepository interface {

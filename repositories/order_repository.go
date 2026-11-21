@@ -11,6 +11,7 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type orderRepository struct {
@@ -88,6 +89,102 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		return nil, fmt.Errorf("%w (sisa kuota: %d)", ErrQuotaExceeded, remainingQuota)
 	}
 
+	normalizedSeats := make([]string, 0, len(req.SeatNumbers))
+	seenSeats := make(map[string]bool, len(req.SeatNumbers))
+	for _, rawCode := range req.SeatNumbers {
+		code := strings.ToUpper(strings.TrimSpace(rawCode))
+		if code != "" && !seenSeats[code] {
+			seenSeats[code] = true
+			normalizedSeats = append(normalizedSeats, code)
+		}
+	}
+
+	if len(req.SeatNumbers) > 0 && len(normalizedSeats) != req.Quantity {
+		return nil, fmt.Errorf("%w (jumlah kursi dipilih %d, dibutuhkan %d)", ErrInvalidSeatSelection, len(normalizedSeats), req.Quantity)
+	}
+
+	var assignedSeatIDs []string
+	var assignedSeatCodes []string
+
+	if len(normalizedSeats) > 0 {
+		seatRows, err := tx.QueryContext(ctx, `
+			SELECT id, seat_code, category_id, status
+			FROM seats
+			WHERE event_id = $1 AND seat_code = ANY($2)
+			FOR UPDATE
+		`, eventID, pq.Array(normalizedSeats))
+		if err != nil {
+			return nil, fmt.Errorf("gagal memverifikasi ketersediaan kursi: %w", err)
+		}
+
+		type lockedSeat struct {
+			id         string
+			seatCode   string
+			categoryID string
+			status     string
+		}
+		foundByCode := make(map[string]lockedSeat, len(normalizedSeats))
+		for seatRows.Next() {
+			var ls lockedSeat
+			if err := seatRows.Scan(&ls.id, &ls.seatCode, &ls.categoryID, &ls.status); err != nil {
+				seatRows.Close()
+				return nil, fmt.Errorf("gagal membaca status kursi: %w", err)
+			}
+			foundByCode[strings.ToUpper(ls.seatCode)] = ls
+		}
+		if err := seatRows.Err(); err != nil {
+			seatRows.Close()
+			return nil, fmt.Errorf("kesalahan membaca data kursi: %w", err)
+		}
+		seatRows.Close()
+
+		if len(foundByCode) != len(normalizedSeats) {
+			return nil, fmt.Errorf("%w (nomor kursi tidak terdaftar pada konser ini)", ErrInvalidSeatSelection)
+		}
+
+		for _, code := range normalizedSeats {
+			ls := foundByCode[code]
+			if ls.categoryID != catID {
+				return nil, fmt.Errorf("%w (kursi %s tidak termasuk dalam kategori %s)", ErrInvalidSeatSelection, ls.seatCode, catName)
+			}
+			if strings.ToUpper(ls.status) != "AVAILABLE" {
+				return nil, fmt.Errorf("%w: kursi %s", ErrSeatUnavailable, ls.seatCode)
+			}
+			assignedSeatIDs = append(assignedSeatIDs, ls.id)
+			assignedSeatCodes = append(assignedSeatCodes, ls.seatCode)
+		}
+	} else {
+		seatRows, err := tx.QueryContext(ctx, `
+			SELECT id, seat_code
+			FROM seats
+			WHERE event_id = $1 AND category_id = $2 AND status = 'AVAILABLE'
+			ORDER BY row_label ASC, seat_number ASC
+			LIMIT $3
+			FOR UPDATE
+		`, eventID, catID, req.Quantity)
+		if err != nil {
+			return nil, fmt.Errorf("gagal mengalokasikan kursi otomatis: %w", err)
+		}
+		for seatRows.Next() {
+			var sid, scode string
+			if err := seatRows.Scan(&sid, &scode); err != nil {
+				seatRows.Close()
+				return nil, fmt.Errorf("gagal membaca kursi otomatis: %w", err)
+			}
+			assignedSeatIDs = append(assignedSeatIDs, sid)
+			assignedSeatCodes = append(assignedSeatCodes, scode)
+		}
+		if err := seatRows.Err(); err != nil {
+			seatRows.Close()
+			return nil, fmt.Errorf("kesalahan iterasi alokasi kursi otomatis: %w", err)
+		}
+		seatRows.Close()
+
+		if len(assignedSeatIDs) > 0 && len(assignedSeatIDs) < req.Quantity {
+			return nil, fmt.Errorf("%w (kursi fisik tersedia hanya %d)", ErrSeatUnavailable, len(assignedSeatIDs))
+		}
+	}
+
 	newRemaining := remainingQuota - req.Quantity
 	_, err = tx.ExecContext(ctx, `
 		UPDATE ticket_categories
@@ -105,16 +202,28 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	orderCode := "SYM-" + randomNum
 	orderID := uuid.New().String()
 	qrCode := fmt.Sprintf("QR-%s", orderCode)
+	seatNumbersStr := strings.Join(assignedSeatCodes, ", ")
 	totalPrice := price * float64(req.Quantity)
 	dateFull := fmt.Sprintf("%s @ %s", evtDate, evtTime)
 	now = time.Now()
 
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, status, payment_method, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'ISSUED', 'SANDBOX_PAYMENT', $15)
-	`, orderID, orderCode, authenticatedUserID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode, now)
+		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, seat_numbers, status, payment_method, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'ISSUED', 'SANDBOX_PAYMENT', $16)
+	`, orderID, orderCode, authenticatedUserID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode, seatNumbersStr, now)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membuat data pesanan tiket: %w", err)
+	}
+
+	if len(assignedSeatIDs) > 0 {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE seats
+			SET status = 'BOOKED', order_id = $1
+			WHERE id = ANY($2)
+		`, orderID, pq.Array(assignedSeatIDs))
+		if err != nil {
+			return nil, fmt.Errorf("gagal menandai kursi terpesan: %w", err)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -139,6 +248,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		UserName:      req.UserName,
 		UserEmail:     req.UserEmail,
 		QRCode:        qrCode,
+		SeatNumbers:   seatNumbersStr,
 		Status:        "ISSUED",
 		PaymentMethod: "SANDBOX_PAYMENT",
 		CreatedAt:     now,
@@ -148,7 +258,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 const orderWithEventSelect = `
 	SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 	       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-	       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+	       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''), o.status,
 	       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 	FROM orders o
 	LEFT JOIN events e ON o.event_id = e.id
@@ -164,7 +274,7 @@ func scanOrderWithEvent(scanner rowScanner) (models.OrderRecord, error) {
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date, &record.OpenGate, &record.EventTime, &record.VenueAddress,
 		&record.CategoryName, &record.Quantity, &record.TotalPrice, &record.UserName, &record.UserEmail,
-		&record.QRCode, &record.Status, &record.PaymentMethod, &record.CreatedAt,
+		&record.QRCode, &record.SeatNumbers, &record.Status, &record.PaymentMethod, &record.CreatedAt,
 	)
 	return record, err
 }
@@ -231,7 +341,7 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 
 	err = tx.QueryRowContext(ctx, `
 		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
-		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, o.status,
+		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at,
 		       e.is_closed, COALESCE(e.open_gate, ''), COALESCE(e.time, ''), e.event_date_time
 		FROM orders o
@@ -242,7 +352,7 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date,
 		&record.CategoryName, &record.Quantity, &record.TotalPrice,
-		&record.UserName, &record.UserEmail, &record.QRCode, &record.Status,
+		&record.UserName, &record.UserEmail, &record.QRCode, &record.SeatNumbers, &record.Status,
 		&record.PaymentMethod, &record.CreatedAt,
 		&evtClosed, &evtOpenGate, &evtTime, &rawEventDateTime,
 	)
@@ -454,6 +564,15 @@ func (r *orderRepository) UpdateOrderStatus(ctx context.Context, id, status stri
 		`, quantity, eventID, categoryName)
 		if err != nil {
 			return fmt.Errorf("gagal mengembalikan kuota kategori tiket: %w", err)
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			UPDATE seats
+			SET status = 'AVAILABLE', order_id = NULL
+			WHERE order_id = $1
+		`, id)
+		if err != nil {
+			return fmt.Errorf("gagal melepas nomor kursi pesanan: %w", err)
 		}
 	}
 

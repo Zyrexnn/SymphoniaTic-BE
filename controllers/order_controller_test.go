@@ -740,3 +740,59 @@ func TestTicketController_GetAttendanceSummary(t *testing.T) {
 		}
 	})
 }
+
+func TestOrderController_CreateOrderSeatErrors(t *testing.T) {
+	t.Run("Gagal (409 Conflict) ketika kursi sudah dipesan orang lain", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CreateOrderFunc: func(ctx context.Context, req *models.CreateOrderRequest, authenticatedUserID string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrSeatUnavailable
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         1,
+			UserName:         "Budi",
+			UserEmail:        "budi@example.com",
+			SeatNumbers:      []string{"A-1"},
+		}
+		bodyBytes, _ := json.Marshal(payload)
+		req := httptest.NewRequest("POST", "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("Ekspektasi 409 Conflict, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) ketika pilihan nomor kursi tidak valid", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CreateOrderFunc: func(ctx context.Context, req *models.CreateOrderRequest, authenticatedUserID string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrInvalidSeatSelection
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         2,
+			UserName:         "Budi",
+			UserEmail:        "budi@example.com",
+			SeatNumbers:      []string{"A-1"},
+		}
+		bodyBytes, _ := json.Marshal(payload)
+		req := httptest.NewRequest("POST", "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+}

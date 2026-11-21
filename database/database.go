@@ -3,9 +3,11 @@ package database
 import (
 	"database/sql"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/config"
+	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	_ "github.com/lib/pq"
 )
@@ -109,12 +111,31 @@ func initSchema() {
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS event_date_time TIMESTAMP WITH TIME ZONE DEFAULT NULL;
 
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) DEFAULT '';
+	ALTER TABLE orders ADD COLUMN IF NOT EXISTS seat_numbers VARCHAR(255) DEFAULT '';
 	CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_event_id ON orders(event_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_user_email_lower ON orders(LOWER(user_email));
 	CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 	CREATE INDEX IF NOT EXISTS idx_orders_created_at_status ON orders(created_at, status);
 	CREATE INDEX IF NOT EXISTS idx_ticket_categories_event_id ON ticket_categories(event_id);
+
+	CREATE TABLE IF NOT EXISTS seats (
+		id VARCHAR(64) PRIMARY KEY,
+		event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+		category_id VARCHAR(64) NOT NULL REFERENCES ticket_categories(id) ON DELETE CASCADE,
+		seat_code VARCHAR(20) NOT NULL,
+		row_label VARCHAR(10) NOT NULL,
+		seat_number INT NOT NULL,
+		order_id VARCHAR(64) REFERENCES orders(id) ON DELETE SET NULL,
+		status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(event_id, seat_code)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_seats_event_id ON seats(event_id);
+	CREATE INDEX IF NOT EXISTS idx_seats_category_id ON seats(category_id);
+	CREATE INDEX IF NOT EXISTS idx_seats_order_id ON seats(order_id);
+	CREATE INDEX IF NOT EXISTS idx_seats_event_status ON seats(event_id, status);
 
 	CREATE TABLE IF NOT EXISTS refund_requests (
 		id VARCHAR(64) PRIMARY KEY,
@@ -174,8 +195,9 @@ func initSchema() {
 		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
 	}
 
-	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, users, auth_otps) siap")
+	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps) siap")
 	seedInitialData()
+	ensureEventSeatsInitialized()
 }
 
 func seedInitialData() {
@@ -337,4 +359,152 @@ func seedInitialData() {
 
 	_ = tx.Commit()
 	log.Println("Seeding data awal konser selesai")
+}
+
+func ensureEventSeatsInitialized() {
+	rows, err := DB.Query("SELECT id FROM events")
+	if err != nil {
+		log.Printf("Gagal memeriksa daftar konser untuk inisialisasi kursi: %v", err)
+		return
+	}
+	var eventIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			eventIDs = append(eventIDs, id)
+		}
+	}
+	rows.Close()
+
+	for _, eventID := range eventIDs {
+		var seatCount int
+		if err := DB.QueryRow("SELECT COUNT(*) FROM seats WHERE event_id = $1", eventID).Scan(&seatCount); err != nil || seatCount > 0 {
+			continue
+		}
+
+		catRows, err := DB.Query(`
+			SELECT id, event_id, name, price, quota, remaining_quota
+			FROM ticket_categories
+			WHERE event_id = $1
+			ORDER BY price DESC
+		`, eventID)
+		if err != nil {
+			continue
+		}
+		var cats []models.TicketCategory
+		for catRows.Next() {
+			var c models.TicketCategory
+			if err := catRows.Scan(&c.ID, &c.EventID, &c.Name, &c.Price, &c.Quota, &c.RemainingQuota); err == nil {
+				cats = append(cats, c)
+			}
+		}
+		catRows.Close()
+
+		if len(cats) == 0 {
+			continue
+		}
+
+		seats := utils.GenerateHallSeats(eventID, cats)
+		if len(seats) == 0 {
+			continue
+		}
+
+		tx, err := DB.Begin()
+		if err != nil {
+			continue
+		}
+
+		for _, s := range seats {
+			if _, err := tx.Exec(`
+				INSERT INTO seats (id, event_id, category_id, seat_code, row_label, seat_number, status)
+				VALUES ($1, $2, $3, $4, $5, $6, 'AVAILABLE')
+			`, s.ID, s.EventID, s.CategoryID, s.SeatCode, s.RowLabel, s.SeatNumber); err != nil {
+				log.Printf("Gagal menyimpan kursi awal untuk konser %s: %v", eventID, err)
+				tx.Rollback()
+				goto nextEvent
+			}
+		}
+
+		// Sinkronkan pesanan aktif terbaru maksimal sejumlah tiket terpakai (quota - remaining_quota)
+		{
+			catByName := make(map[string]models.TicketCategory, len(cats))
+			for _, c := range cats {
+				catByName[strings.ToLower(strings.TrimSpace(c.Name))] = c
+			}
+			bookedBudget := make(map[string]int, len(cats))
+			for _, c := range cats {
+				used := c.Quota - c.RemainingQuota
+				if used < 0 {
+					used = 0
+				}
+				bookedBudget[c.ID] = used
+			}
+
+			ordRows, err := tx.Query(`
+				SELECT id, category_name, quantity
+				FROM orders
+				WHERE event_id = $1
+				  AND UPPER(status) IN ('ISSUED', 'VERIFIED', 'REMINDED', 'CHECKED_IN')
+				  AND COALESCE(seat_numbers, '') = ''
+				ORDER BY created_at DESC
+			`, eventID)
+			if err == nil {
+				type legacyOrder struct {
+					id      string
+					catName string
+					qty     int
+				}
+				var legacyOrders []legacyOrder
+				for ordRows.Next() {
+					var lo legacyOrder
+					if err := ordRows.Scan(&lo.id, &lo.catName, &lo.qty); err == nil {
+						legacyOrders = append(legacyOrders, lo)
+					}
+				}
+				ordRows.Close()
+
+				for _, lo := range legacyOrders {
+					cat, ok := catByName[strings.ToLower(strings.TrimSpace(lo.catName))]
+					if !ok || lo.qty <= 0 || bookedBudget[cat.ID] < lo.qty {
+						continue
+					}
+					sRows, err := tx.Query(`
+						SELECT id, seat_code
+						FROM seats
+						WHERE event_id = $1 AND category_id = $2 AND status = 'AVAILABLE'
+						ORDER BY row_label ASC, seat_number ASC
+						LIMIT $3
+					`, eventID, cat.ID, lo.qty)
+					if err != nil {
+						continue
+					}
+					var seatIDs, seatCodes []string
+					for sRows.Next() {
+						var sid, scode string
+						if err := sRows.Scan(&sid, &scode); err == nil {
+							seatIDs = append(seatIDs, sid)
+							seatCodes = append(seatCodes, scode)
+						}
+					}
+					sRows.Close()
+
+					if len(seatIDs) == lo.qty {
+						for _, sid := range seatIDs {
+							_, _ = tx.Exec("UPDATE seats SET status = 'BOOKED', order_id = $1 WHERE id = $2", lo.id, sid)
+						}
+						_, _ = tx.Exec("UPDATE orders SET seat_numbers = $1 WHERE id = $2", strings.Join(seatCodes, ", "), lo.id)
+						bookedBudget[cat.ID] -= lo.qty
+					}
+				}
+			}
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Printf("Gagal commit inisialisasi kursi konser %s: %v", eventID, err)
+		} else {
+			log.Printf("Inisialisasi %d nomor kursi untuk konser %s selesai", len(seats), eventID)
+		}
+
+	nextEvent:
+	}
 }

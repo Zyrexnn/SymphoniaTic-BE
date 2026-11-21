@@ -208,6 +208,7 @@ func SendETicketEmail(order models.OrderRecord) {
 		"OpenGate":     order.OpenGate,
 		"VenueAddress": order.VenueAddress,
 		"CategoryName": order.CategoryName,
+		"SeatNumbers":  order.SeatNumbers,
 		"Quantity":     order.Quantity,
 		"TotalPrice":   order.TotalPrice,
 	}

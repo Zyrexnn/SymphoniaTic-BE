@@ -93,6 +93,12 @@ func (c *CategoryController) UpdateTicketCategory(ctx *fiber.Ctx) error {
 				Message: "Kategori tiket tidak ditemukan",
 			})
 		}
+		if errors.Is(err, repositories.ErrQuotaBelowBooked) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: err.Error(),
+			})
+		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal memperbarui kategori tiket",
@@ -125,6 +131,12 @@ func (c *CategoryController) DeleteTicketCategory(ctx *fiber.Ctx) error {
 			return ctx.Status(fiber.StatusNotFound).JSON(models.APIResponse{
 				Success: false,
 				Message: "Kategori tiket tidak ditemukan",
+			})
+		}
+		if errors.Is(err, repositories.ErrCategoryHasBookedSeats) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: err.Error(),
 			})
 		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{

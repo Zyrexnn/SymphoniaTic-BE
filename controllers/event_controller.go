@@ -60,6 +60,29 @@ func (c *EventController) GetEventByID(ctx *fiber.Ctx) error {
 	return utils.ResponseOK(ctx, "Berhasil mengambil detail konser", event)
 }
 
+// GetEventSeats godoc
+// @Summary Mengambil daftar nomor kursi dan status keterisiannya
+// @Description Mengambil seluruh kursi fisik pertunjukan beserta status AVAILABLE atau BOOKED secara real-time.
+// @Tags Public - Events
+// @Accept json
+// @Produce json
+// @Param id path string true "Event ID"
+// @Success 200 {object} models.APIResponse{data=[]models.SeatItem} "Berhasil mengambil daftar kursi konser"
+// @Failure 404 {object} models.APIResponse "Konser tidak ditemukan"
+// @Router /events/{id}/seats [get]
+func (c *EventController) GetEventSeats(ctx *fiber.Ctx) error {
+	eventID := ctx.Params("id")
+	seats, err := c.repo.GetSeatsByEventID(ctx.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return utils.ResponseNotFound(ctx, "Konser tidak ditemukan")
+		}
+		return utils.ResponseInternalError(ctx, "Gagal mengambil daftar kursi konser", err)
+	}
+
+	return utils.ResponseOK(ctx, "Berhasil mengambil daftar kursi konser", seats)
+}
+
 func validateEventSchedule(openGate, eventTime string, rundown []models.RundownItem) string {
 	if strings.TrimSpace(openGate) == "" {
 		return "Waktu Open Gate wajib diisi"

@@ -53,9 +53,23 @@ CREATE TABLE IF NOT EXISTS orders (
     user_name VARCHAR(255) NOT NULL,
     user_email VARCHAR(255) NOT NULL,
     qr_code VARCHAR(255) NOT NULL,
+    seat_numbers VARCHAR(255) DEFAULT '',
     status VARCHAR(50) NOT NULL DEFAULT 'ISSUED',
     payment_method VARCHAR(50) DEFAULT 'SANDBOX_PAYMENT',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS seats (
+    id VARCHAR(64) PRIMARY KEY,
+    event_id VARCHAR(64) NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    category_id VARCHAR(64) NOT NULL REFERENCES ticket_categories(id) ON DELETE CASCADE,
+    seat_code VARCHAR(20) NOT NULL,
+    row_label VARCHAR(10) NOT NULL,
+    seat_number INT NOT NULL,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE SET NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(event_id, seat_code)
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
@@ -65,6 +79,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_order_code ON orders(order_code);
 CREATE INDEX IF NOT EXISTS idx_orders_user_email ON orders(user_email);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at_status ON orders(created_at, status);
+CREATE INDEX IF NOT EXISTS idx_seats_event_id ON seats(event_id);
+CREATE INDEX IF NOT EXISTS idx_seats_category_id ON seats(category_id);
+CREATE INDEX IF NOT EXISTS idx_seats_order_id ON seats(order_id);
+CREATE INDEX IF NOT EXISTS idx_seats_event_status ON seats(event_id, status);
 
 CREATE TABLE IF NOT EXISTS refund_requests (
     id VARCHAR(64) PRIMARY KEY,

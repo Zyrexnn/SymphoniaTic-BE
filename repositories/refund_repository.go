@@ -370,6 +370,14 @@ func (r *refundRepository) UpdateRefundStatus(ctx context.Context, refundID, new
 			if err == nil && rowsAffected == 0 {
 				log.Printf("Peringatan: Kategori tiket %s pada event %s tidak ditemukan saat pengembalian kuota refund %s", categoryName, eventID, refundID)
 			}
+
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE seats
+				SET status = 'AVAILABLE', order_id = NULL
+				WHERE order_id = $1
+			`, orderID); err != nil {
+				return nil, fmt.Errorf("gagal melepas nomor kursi pesanan refund: %w", err)
+			}
 		}
 	} else if normalizedStatus == "REJECTED" {
 		// Mengembalikan status pesanan ke ISSUED jika permohonan ditolak agar tiket tetap valid dan muncul di dashboard
