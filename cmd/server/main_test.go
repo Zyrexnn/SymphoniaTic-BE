@@ -37,7 +37,7 @@ func TestRouter_RoleAuthorizationSegregation(t *testing.T) {
 		GetAdminDashboardMetricsFunc: func(ctx context.Context) (*models.AdminDashboardMetrics, error) {
 			return &models.AdminDashboardMetrics{}, nil
 		},
-		CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+		CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 			return &models.OrderRecord{OrderCode: orderCode, Status: "CHECKED_IN"}, nil
 		},
 		GetAttendanceSummaryFunc: func(ctx context.Context, eventID string) (*models.GateAttendanceSummary, error) {

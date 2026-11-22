@@ -168,8 +168,9 @@ type UpdateOrderStatusRequest struct {
 }
 
 type CheckInRequest struct {
-	Code      string `json:"code"`
-	OrderCode string `json:"orderCode,omitempty"`
+	Code           string `json:"code"`
+	OrderCode      string `json:"orderCode,omitempty"`
+	BypassOpenGate bool   `json:"bypassOpenGate,omitempty"`
 }
 
 // ─── REFUND MODELS ───

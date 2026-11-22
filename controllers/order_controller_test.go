@@ -443,7 +443,7 @@ func TestOrderController_LookupTicketByCode(t *testing.T) {
 func TestTicketController_CheckInTicket(t *testing.T) {
 	t.Run("Sukses (200 OK) saat tiket valid dan status ISSUED", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return &models.OrderRecord{
 					ID:        "ord-01",
 					OrderCode: "SYM-987654",
@@ -480,7 +480,7 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 	t.Run("Gagal (400 Bad Request) saat tiket sudah pernah digunakan", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return nil, repositories.ErrTicketAlreadyUsed
 			},
 		}
@@ -511,7 +511,7 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 	t.Run("Gagal (400 Bad Request) saat tiket dibatalkan atau direfund", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return nil, repositories.ErrTicketInvalid
 			},
 		}
@@ -542,7 +542,7 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 	t.Run("Gagal (404 Not Found) saat tiket tidak ditemukan", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return nil, repositories.ErrNotFound
 			},
 		}
@@ -588,7 +588,7 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 	t.Run("Gagal (400 Bad Request) saat konser ditutup oleh panitia", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return nil, repositories.ErrEventClosed
 			},
 		}
@@ -619,7 +619,7 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 	t.Run("Gagal (400 Bad Request) saat gerbang masuk konser belum dibuka", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return nil, repositories.ErrEventNotStarted
 			},
 		}
@@ -650,7 +650,7 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 	t.Run("Gagal (400 Bad Request) saat acara konser telah selesai (expired)", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return nil, repositories.ErrEventExpired
 			},
 		}
@@ -798,7 +798,7 @@ func TestOrderController_CreateOrderSeatErrors(t *testing.T) {
 
 	t.Run("Sukses (200 OK) partial check-in per kursi menampilkan progres jumlah masuk", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{
-			CheckInTicketFunc: func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 				return &models.OrderRecord{
 					ID:             "ord-01",
 					OrderCode:      "SYM-987654",
@@ -826,6 +826,36 @@ func TestOrderController_CreateOrderSeatErrors(t *testing.T) {
 		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
 		if !apiResp.Success || apiResp.Message != "Check-in kursi berhasil (1/2 tiket telah masuk)" {
 			t.Fatalf("Pesan partial check-in tidak sesuai: %+v", apiResp)
+		}
+	})
+
+	t.Run("Meneruskan flag bypassOpenGate ke repository saat check-in", func(t *testing.T) {
+		var receivedBypass bool
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
+				receivedBypass = bypassOpenGate
+				return &models.OrderRecord{
+					ID:        "ord-bypass",
+					OrderCode: "SYM-FUTURE",
+					Status:    "CHECKED_IN",
+				}, nil
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+		payload := models.CheckInRequest{Code: "SYM-FUTURE", BypassOpenGate: true}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+		if !receivedBypass {
+			t.Fatalf("Flag bypassOpenGate tidak diteruskan ke repository")
 		}
 	})
 }

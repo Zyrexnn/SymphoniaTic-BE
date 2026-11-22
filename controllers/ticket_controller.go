@@ -89,7 +89,7 @@ func (c *TicketController) CheckInTicket(ctx *fiber.Ctx) error {
 		})
 	}
 
-	orderRecord, err := c.repo.CheckInTicket(ctx.Context(), code)
+	orderRecord, err := c.repo.CheckInTicket(ctx.Context(), code, req.BypassOpenGate)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return ctx.Status(fiber.StatusNotFound).JSON(models.APIResponse{

@@ -57,7 +57,7 @@ type OrderRepository interface {
 	GetOrderByCode(ctx context.Context, code string) (*models.OrderRecord, error)
 	GetOrderByID(ctx context.Context, id string) (*models.OrderRecord, error)
 	LookupTicketByCode(ctx context.Context, code string) (*models.OrderRecord, error)
-	CheckInTicket(ctx context.Context, orderCode string) (*models.OrderRecord, error)
+	CheckInTicket(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error)
 	GetUserOrders(ctx context.Context, userID, userEmail, statusFilter string) ([]models.OrderRecord, error)
 	GetUserOrderByCode(ctx context.Context, code, userID, userEmail string) (*models.OrderRecord, error)
 	GetAllOrders(ctx context.Context, searchQuery, statusFilter string) ([]models.OrderRecord, error)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -343,7 +344,7 @@ func (r *orderRepository) LookupTicketByCode(ctx context.Context, code string) (
 	return r.GetOrderByCode(ctx, code)
 }
 
-func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 	cleanCode, baseOrderCode, targetSeat := parseTicketLookupCode(orderCode)
 	if cleanCode == "" {
 		return nil, ErrNotFound
@@ -430,7 +431,8 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string) (
 	}
 
 	now := time.Now()
-	if !openGateTime.IsZero() && now.Before(openGateTime) {
+	allowFuture := bypassOpenGate || strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_FUTURE_CHECKIN")), "true")
+	if !allowFuture && !openGateTime.IsZero() && now.Before(openGateTime) {
 		return nil, ErrEventNotStarted
 	}
 

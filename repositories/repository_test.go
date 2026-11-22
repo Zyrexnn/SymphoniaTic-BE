@@ -163,7 +163,7 @@ func TestMockOrderRepository(t *testing.T) {
 		t.Fatalf("gagal mengeksekusi mock GetUserDashboardSummaryFunc")
 	}
 
-	mockRepo.CheckInTicketFunc = func(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+	mockRepo.CheckInTicketFunc = func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 		if orderCode == "SYM-USED" {
 			return nil, ErrTicketAlreadyUsed
 		}
@@ -172,11 +172,11 @@ func TestMockOrderRepository(t *testing.T) {
 			Status:    "CHECKED_IN",
 		}, nil
 	}
-	checkedInOrder, err := mockRepo.CheckInTicket(ctx, "SYM-123456")
+	checkedInOrder, err := mockRepo.CheckInTicket(ctx, "SYM-123456", false)
 	if err != nil || checkedInOrder.Status != "CHECKED_IN" {
 		t.Fatalf("gagal mengeksekusi mock CheckInTicketFunc: %v", err)
 	}
-	_, err = mockRepo.CheckInTicket(ctx, "SYM-USED")
+	_, err = mockRepo.CheckInTicket(ctx, "SYM-USED", false)
 	if !errors.Is(err, ErrTicketAlreadyUsed) {
 		t.Fatalf("ekspektasi ErrTicketAlreadyUsed, didapat: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestOrderRepository_EnrichedQueriesAndRemindedCheckIn(t *testing.T) {
 			}
 		},
 	}
-	checkedIn, err := NewOrderRepository(newStubDB(t, checkInState)).CheckInTicket(ctx, "SYM-100001")
+	checkedIn, err := NewOrderRepository(newStubDB(t, checkInState)).CheckInTicket(ctx, "SYM-100001", false)
 	if err != nil {
 		t.Fatalf("CheckInTicket untuk tiket REMINDED seharusnya sukses, dapat: %v", err)
 	}
@@ -533,7 +533,7 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 				}
 			},
 		}
-		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-CLOSED")
+		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-CLOSED", false)
 		if !errors.Is(err, ErrEventClosed) {
 			t.Fatalf("Ekspektasi ErrEventClosed, dapat: %v", err)
 		}
@@ -560,9 +560,26 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 				}
 			},
 		}
-		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-FUTURE")
+		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-FUTURE", false)
 		if !errors.Is(err, ErrEventNotStarted) {
 			t.Fatalf("Ekspektasi ErrEventNotStarted, dapat: %v", err)
+		}
+
+		checkedIn, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-FUTURE", true)
+		if err != nil {
+			t.Fatalf("Ekspektasi check-in sukses saat bypassOpenGate=true, dapat: %v", err)
+		}
+		if checkedIn.Status != "CHECKED_IN" {
+			t.Fatalf("Ekspektasi status CHECKED_IN, dapat: %s", checkedIn.Status)
+		}
+
+		t.Setenv("ALLOW_FUTURE_CHECKIN", "true")
+		checkedInEnv, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-FUTURE", false)
+		if err != nil {
+			t.Fatalf("Ekspektasi check-in sukses saat ALLOW_FUTURE_CHECKIN=true, dapat: %v", err)
+		}
+		if checkedInEnv.Status != "CHECKED_IN" {
+			t.Fatalf("Ekspektasi status CHECKED_IN via env, dapat: %s", checkedInEnv.Status)
 		}
 	})
 
@@ -587,7 +604,7 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 				}
 			},
 		}
-		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-EXPIRED")
+		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-EXPIRED", false)
 		if !errors.Is(err, ErrEventExpired) {
 			t.Fatalf("Ekspektasi ErrEventExpired, dapat: %v", err)
 		}
@@ -1112,7 +1129,7 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 		}
 		repo := NewOrderRepository(newStubDB(t, state))
 
-		rec1, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-1")
+		rec1, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-1", false)
 		if err != nil {
 			t.Fatalf("Check-in kursi A-1 gagal: %v", err)
 		}
@@ -1121,11 +1138,11 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 		}
 		checkedInSeats = "A-1"
 
-		if _, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-1"); !errors.Is(err, ErrTicketAlreadyUsed) {
+		if _, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-1", false); !errors.Is(err, ErrTicketAlreadyUsed) {
 			t.Fatalf("Ekspektasi ErrTicketAlreadyUsed saat scan ulang A-1, dapat: %v", err)
 		}
 
-		rec2, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-2")
+		rec2, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-2", false)
 		if err != nil {
 			t.Fatalf("Check-in kursi A-2 gagal: %v", err)
 		}

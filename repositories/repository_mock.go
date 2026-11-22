@@ -118,7 +118,7 @@ type MockOrderRepository struct {
 	GetOrderByCodeFunc           func(ctx context.Context, code string) (*models.OrderRecord, error)
 	GetOrderByIDFunc             func(ctx context.Context, id string) (*models.OrderRecord, error)
 	LookupTicketByCodeFunc       func(ctx context.Context, code string) (*models.OrderRecord, error)
-	CheckInTicketFunc            func(ctx context.Context, orderCode string) (*models.OrderRecord, error)
+	CheckInTicketFunc            func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error)
 	GetUserOrdersFunc            func(ctx context.Context, userID, userEmail, statusFilter string) ([]models.OrderRecord, error)
 	GetUserOrderByCodeFunc       func(ctx context.Context, code, userID, userEmail string) (*models.OrderRecord, error)
 	GetAllOrdersFunc             func(ctx context.Context, searchQuery, statusFilter string) ([]models.OrderRecord, error)
@@ -156,9 +156,9 @@ func (m *MockOrderRepository) LookupTicketByCode(ctx context.Context, code strin
 	return nil, nil
 }
 
-func (m *MockOrderRepository) CheckInTicket(ctx context.Context, orderCode string) (*models.OrderRecord, error) {
+func (m *MockOrderRepository) CheckInTicket(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
 	if m.CheckInTicketFunc != nil {
-		return m.CheckInTicketFunc(ctx, orderCode)
+		return m.CheckInTicketFunc(ctx, orderCode, bypassOpenGate)
 	}
 	return nil, nil
 }
