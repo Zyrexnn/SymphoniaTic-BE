@@ -24,6 +24,27 @@ func TestGenerateCryptoOTP(t *testing.T) {
 	}
 }
 
+func TestGenerateCryptoAlphanumericCode(t *testing.T) {
+	const allowed = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	allowedMap := make(map[rune]bool, len(allowed))
+	for _, r := range allowed {
+		allowedMap[r] = true
+	}
+
+	code, err := utils.GenerateCryptoAlphanumericCode(8)
+	if err != nil {
+		t.Fatalf("Ekspektasi tidak ada error saat membuat kode alfanumerik: %v", err)
+	}
+	if len(code) != 8 {
+		t.Fatalf("Ekspektasi panjang kode 8 karakter, dapat %d (%s)", len(code), code)
+	}
+	for _, ch := range code {
+		if !allowedMap[ch] {
+			t.Errorf("Karakter %q tidak diperbolehkan (mengandung karakter ambigu atau di luar charset)", ch)
+		}
+	}
+}
+
 func TestPasswordHashing(t *testing.T) {
 	rawPassword := "SecureP@ssw0rd2026"
 

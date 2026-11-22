@@ -1150,4 +1150,11 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 			t.Fatalf("Ekspektasi status CHECKED_IN setelah semua kursi masuk, dapat: %s", rec2.Status)
 		}
 	})
+
+	t.Run("Parsing format kode pesanan alfanumerik 8-karakter beserta sub-kursi", func(t *testing.T) {
+		clean, base, seat := parseTicketLookupCode("QR-SYM-7K9P2X8M-F-10")
+		if clean != "SYM-7K9P2X8M-F-10" || base != "SYM-7K9P2X8M" || seat != "F-10" {
+			t.Fatalf("Hasil parsing tidak sesuai: clean=%q base=%q seat=%q", clean, base, seat)
+		}
+	})
 }

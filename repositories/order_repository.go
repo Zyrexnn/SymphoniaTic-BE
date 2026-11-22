@@ -196,11 +196,11 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		return nil, fmt.Errorf("gagal memperbarui sisa kuota tiket: %w", err)
 	}
 
-	randomNum, err := utils.GenerateCryptoOTP()
+	randomCode, err := utils.GenerateCryptoAlphanumericCode(8)
 	if err != nil {
-		randomNum = fmt.Sprintf("%d", time.Now().UnixNano()%900000+100000)
+		randomCode = fmt.Sprintf("%08X", time.Now().UnixNano()&0xFFFFFFFF)
 	}
-	orderCode := "SYM-" + randomNum
+	orderCode := "SYM-" + randomCode
 	orderID := uuid.New().String()
 	qrCode := fmt.Sprintf("QR-%s", orderCode)
 	seatNumbersStr := strings.Join(assignedSeatCodes, ", ")
