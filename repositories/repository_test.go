@@ -1169,6 +1169,36 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 		}
 	})
 
+	t.Run("Menolak sub-seat QR pada pesanan lama yang tidak memiliki daftar nomor kursi", func(t *testing.T) {
+		pastStart := time.Now().Add(-30 * time.Minute)
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				if strings.Contains(query, "FROM orders o") {
+					return stubQueryResult{
+						columns: []string{
+							"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
+							"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
+							"attendee_names", "checked_in_seats",
+							"status", "payment_method", "created_at",
+							"is_closed", "open_gate", "time", "event_date_time",
+						},
+						rows: [][]driver.Value{{
+							"ord-legacy", "SYM-100099", "usr-1", "evt-1", "Simfoni Lama", "Jakarta Orchestra", "Aula Simfonia",
+							pastStart.Format("2006-01-02") + " @ " + pastStart.Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
+							"QR-SYM-100099", "", "", "",
+							"ISSUED", "SANDBOX_PAYMENT", time.Now(),
+							false, "", "", pastStart,
+						}},
+					}
+				}
+				return stubQueryResult{}
+			},
+		}
+		if _, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "QR-SYM-100099-A-1", false); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("Ekspektasi ErrNotFound untuk sub-seat pada pesanan tanpa kursi, dapat: %v", err)
+		}
+	})
+
 	t.Run("Parsing format kode pesanan alfanumerik 8-karakter beserta sub-kursi", func(t *testing.T) {
 		clean, base, seat := parseTicketLookupCode("QR-SYM-7K9P2X8M-F-10")
 		if clean != "SYM-7K9P2X8M-F-10" || base != "SYM-7K9P2X8M" || seat != "F-10" {

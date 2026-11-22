@@ -1785,6 +1785,9 @@ const docTemplate = `{
         "models.CheckInRequest": {
             "type": "object",
             "properties": {
+                "bypassOpenGate": {
+                    "type": "boolean"
+                },
                 "code": {
                     "type": "string"
                 },
@@ -1883,6 +1886,12 @@ const docTemplate = `{
         "models.CreateOrderRequest": {
             "type": "object",
             "properties": {
+                "attendeeNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "eventId": {
                     "type": "string"
                 },
@@ -2017,7 +2026,22 @@ const docTemplate = `{
                 "artist": {
                     "type": "string"
                 },
+                "attendeeNames": {
+                    "type": "string"
+                },
                 "categoryName": {
+                    "type": "string"
+                },
+                "checkedInAt": {
+                    "type": "string"
+                },
+                "checkedInAttendee": {
+                    "type": "string"
+                },
+                "checkedInSeat": {
+                    "type": "string"
+                },
+                "checkedInSeats": {
                     "type": "string"
                 },
                 "createdAt": {
@@ -2058,6 +2082,12 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "tickets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TicketItem"
+                    }
                 },
                 "totalPrice": {
                     "type": "number"
@@ -2304,6 +2334,23 @@ const docTemplate = `{
                 },
                 "remainingQuota": {
                     "type": "integer"
+                }
+            }
+        },
+        "models.TicketItem": {
+            "type": "object",
+            "properties": {
+                "attendeeName": {
+                    "type": "string"
+                },
+                "qrCode": {
+                    "type": "string"
+                },
+                "seatCode": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },

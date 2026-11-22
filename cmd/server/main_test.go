@@ -190,6 +190,21 @@ func TestRouter_RateLimiting(t *testing.T) {
 			t.Fatalf("Ekspektasi 429 Too Many Requests pada request login ke-11, dapat: %d", lastStatus)
 		}
 	})
+	t.Run("Menolak permintaan berlebih pada /orders dengan 429 Too Many Requests", func(t *testing.T) {
+		var lastStatus int
+		for i := 0; i < 16; i++ {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", strings.NewReader(`{}`))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				t.Fatalf("Gagal mengirim request order ke-%d: %v", i, err)
+			}
+			lastStatus = resp.StatusCode
+		}
+		if lastStatus != http.StatusTooManyRequests {
+			t.Fatalf("Ekspektasi 429 Too Many Requests pada request order ke-16, dapat: %d", lastStatus)
+		}
+	})
 }
 
 func TestValidateServerConfig_RequiresJWTSecret(t *testing.T) {

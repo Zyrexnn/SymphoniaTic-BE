@@ -69,6 +69,8 @@ definitions:
     type: object
   models.CheckInRequest:
     properties:
+      bypassOpenGate:
+        type: boolean
       code:
         type: string
       orderCode:
@@ -133,6 +135,10 @@ definitions:
     type: object
   models.CreateOrderRequest:
     properties:
+      attendeeNames:
+        items:
+          type: string
+        type: array
       eventId:
         type: string
       quantity:
@@ -221,7 +227,17 @@ definitions:
     properties:
       artist:
         type: string
+      attendeeNames:
+        type: string
       categoryName:
+        type: string
+      checkedInAt:
+        type: string
+      checkedInAttendee:
+        type: string
+      checkedInSeat:
+        type: string
+      checkedInSeats:
         type: string
       createdAt:
         type: string
@@ -249,6 +265,10 @@ definitions:
         type: string
       status:
         type: string
+      tickets:
+        items:
+          $ref: '#/definitions/models.TicketItem'
+        type: array
       totalPrice:
         type: number
       userEmail:
@@ -410,6 +430,17 @@ definitions:
         type: integer
       remainingQuota:
         type: integer
+    type: object
+  models.TicketItem:
+    properties:
+      attendeeName:
+        type: string
+      qrCode:
+        type: string
+      seatCode:
+        type: string
+      status:
+        type: string
     type: object
   models.TimelineStat:
     properties:

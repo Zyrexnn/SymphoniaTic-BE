@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
 	"os"
@@ -28,7 +29,9 @@ func NewAdminController(repo repositories.OrderRepository, authCfg *config.AuthC
 }
 
 func constantTimeMatch(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+	ha := sha256.Sum256([]byte(a))
+	hb := sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(ha[:], hb[:]) == 1
 }
 
 // AdminLogin godoc
@@ -76,11 +79,16 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 	var authenticatedName string
 	var authenticatedID string
 
-	if constantTimeMatch(adminLoginReq.Username, adminUser) && constantTimeMatch(adminLoginReq.Password, adminPass) {
+	adminUserMatch := constantTimeMatch(adminLoginReq.Username, adminUser)
+	adminPassMatch := constantTimeMatch(adminLoginReq.Password, adminPass)
+	petugasUserMatch := constantTimeMatch(adminLoginReq.Username, petugasUser)
+	petugasPassMatch := constantTimeMatch(adminLoginReq.Password, petugasPass)
+
+	if adminUserMatch && adminPassMatch {
 		authenticatedRole = "ADMIN"
 		authenticatedName = "Super Administrator"
 		authenticatedID = "admin-1"
-	} else if petugasUser != "" && petugasPass != "" && constantTimeMatch(adminLoginReq.Username, petugasUser) && constantTimeMatch(adminLoginReq.Password, petugasPass) {
+	} else if petugasUser != "" && petugasPass != "" && petugasUserMatch && petugasPassMatch {
 		authenticatedRole = "PETUGAS"
 		authenticatedName = "Petugas Gate Officer"
 		authenticatedID = "petugas-1"

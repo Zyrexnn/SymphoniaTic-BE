@@ -475,7 +475,10 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 	orderSeats := models.ParseCommaList(record.SeatNumbers)
 	checkedSeats := models.ParseCommaList(record.CheckedInSeats)
 
-	if isSubSeatScan && len(orderSeats) > 0 {
+	if isSubSeatScan {
+		if len(orderSeats) == 0 {
+			return nil, ErrNotFound
+		}
 		matchedSeat := ""
 		for _, s := range orderSeats {
 			if strings.EqualFold(s, targetSeat) {
