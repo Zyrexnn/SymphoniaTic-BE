@@ -41,8 +41,23 @@ type EventItem struct {
 	Description        string           `json:"description"`
 	IsClosed           bool             `json:"isClosed"`
 	EventDateTime      *time.Time       `json:"eventDateTime,omitempty"`
+	SalesEndAt         *time.Time       `json:"salesEndAt,omitempty"`
 	Rundown            []RundownItem    `json:"rundown"`
 	Categories         []TicketCategory `json:"categories"`
+}
+
+// IsSalesOpen menentukan apakah pembelian tiket masih dibuka berdasarkan override manual dan batas waktu penjualan.
+func (e *EventItem) IsSalesOpen(now time.Time) bool {
+	if e.IsClosed {
+		return false
+	}
+	if e.SalesEndAt != nil && !e.SalesEndAt.IsZero() {
+		return now.Before(*e.SalesEndAt)
+	}
+	if e.EventDateTime != nil && !e.EventDateTime.IsZero() {
+		return now.Before(*e.EventDateTime)
+	}
+	return true
 }
 
 type SeatItem struct {
@@ -137,6 +152,7 @@ type CreateEventRequest struct {
 	Organizer          string                `json:"organizer"`
 	Subtitle           string                `json:"subtitle"`
 	Description        string                `json:"description"`
+	SalesEndAt         *time.Time            `json:"salesEndAt,omitempty"`
 	Rundown            []RundownItem         `json:"rundown"`
 	Categories         []CreateCategoryInput `json:"categories"`
 }
@@ -157,6 +173,7 @@ type UpdateEventRequest struct {
 	Organizer          string        `json:"organizer"`
 	Subtitle           string        `json:"subtitle"`
 	Description        string        `json:"description"`
+	SalesEndAt         *time.Time    `json:"salesEndAt,omitempty"`
 	Rundown            []RundownItem `json:"rundown"`
 }
 

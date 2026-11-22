@@ -43,7 +43,8 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 			COALESCE(rundown, '[]'::jsonb), 
 			COALESCE(description, ''), 
 			COALESCE(is_closed, FALSE),
-			event_date_time
+			event_date_time,
+			sales_end_at
 		FROM events
 		ORDER BY created_at ASC
 	`)
@@ -58,6 +59,7 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 		var eventItem models.EventItem
 		var rundownBytes []byte
 		var rawEventDateTime sql.NullTime
+		var rawSalesEndAt sql.NullTime
 
 		if err := rows.Scan(
 			&eventItem.ID,
@@ -79,6 +81,7 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 			&eventItem.Description,
 			&eventItem.IsClosed,
 			&rawEventDateTime,
+			&rawSalesEndAt,
 		); err != nil {
 			return nil, fmt.Errorf("gagal membaca baris data konser: %w", err)
 		}
@@ -87,15 +90,14 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 		if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
 			t := rawEventDateTime.Time
 			eventItem.EventDateTime = &t
-			if now.After(t) {
-				eventItem.IsClosed = true
-			}
 		} else if dt, err := utils.ParseConcertDateTime(eventItem.Date, eventItem.Time); err == nil && !dt.IsZero() {
 			eventItem.EventDateTime = &dt
-			if now.After(dt) {
-				eventItem.IsClosed = true
-			}
 		}
+		if rawSalesEndAt.Valid && !rawSalesEndAt.Time.IsZero() {
+			t := rawSalesEndAt.Time
+			eventItem.SalesEndAt = &t
+		}
+		eventItem.IsClosed = !eventItem.IsSalesOpen(now)
 
 		eventItem.Categories = []models.TicketCategory{}
 		eventList = append(eventList, eventItem)
@@ -130,6 +132,7 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 	var rundownBytes []byte
 
 	var rawEventDateTime sql.NullTime
+	var rawSalesEndAt sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
 		SELECT 
 			id, 
@@ -150,7 +153,8 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 			COALESCE(rundown, '[]'::jsonb), 
 			COALESCE(description, ''), 
 			COALESCE(is_closed, FALSE),
-			event_date_time
+			event_date_time,
+			sales_end_at
 		FROM events
 		WHERE id = $1
 	`, id).Scan(
@@ -173,6 +177,7 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 		&eventItem.Description,
 		&eventItem.IsClosed,
 		&rawEventDateTime,
+		&rawSalesEndAt,
 	)
 
 	if err != nil {
@@ -188,15 +193,14 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
 		t := rawEventDateTime.Time
 		eventItem.EventDateTime = &t
-		if now.After(t) {
-			eventItem.IsClosed = true
-		}
 	} else if dt, err := utils.ParseConcertDateTime(eventItem.Date, eventItem.Time); err == nil && !dt.IsZero() {
 		eventItem.EventDateTime = &dt
-		if now.After(dt) {
-			eventItem.IsClosed = true
-		}
 	}
+	if rawSalesEndAt.Valid && !rawSalesEndAt.Time.IsZero() {
+		t := rawSalesEndAt.Time
+		eventItem.SalesEndAt = &t
+	}
+	eventItem.IsClosed = !eventItem.IsSalesOpen(now)
 
 	categories, err := r.GetCategoriesByEventID(ctx, eventItem.ID)
 	if err != nil {
@@ -231,10 +235,15 @@ func (r *eventRepository) CreateEvent(ctx context.Context, req *models.CreateEve
 		parsedDateTime = sql.NullTime{Time: dt, Valid: true}
 	}
 
+	var salesEndNullTime sql.NullTime
+	if req.SalesEndAt != nil && !req.SalesEndAt.IsZero() {
+		salesEndNullTime = sql.NullTime{Time: *req.SalesEndAt, Valid: true}
+	}
+
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description, event_date_time)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-	`, eventID, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, badgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, parsedDateTime)
+		INSERT INTO events (id, title, artist, venue, date, time, category, category_badge_color, image, audio_url, conductor, open_gate, address, organizer, subtitle, rundown, description, event_date_time, sales_end_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+	`, eventID, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, badgeColor, req.Image, req.AudioURL, req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, parsedDateTime, salesEndNullTime)
 
 	if err != nil {
 		return nil, fmt.Errorf("gagal menyimpan data konser: %w", err)
@@ -284,7 +293,7 @@ func (r *eventRepository) CreateEvent(ctx context.Context, req *models.CreateEve
 		return nil, fmt.Errorf("gagal konfirmasi transaksi pembuatan konser: %w", err)
 	}
 
-	return &models.EventItem{
+	createdItem := &models.EventItem{
 		ID:                 eventID,
 		Title:              req.Title,
 		Artist:             req.Artist,
@@ -301,9 +310,16 @@ func (r *eventRepository) CreateEvent(ctx context.Context, req *models.CreateEve
 		Organizer:          req.Organizer,
 		Subtitle:           req.Subtitle,
 		Description:        req.Description,
+		SalesEndAt:         req.SalesEndAt,
 		Rundown:            req.Rundown,
 		Categories:         createdCategories,
-	}, nil
+	}
+	if parsedDateTime.Valid {
+		t := parsedDateTime.Time
+		createdItem.EventDateTime = &t
+	}
+	createdItem.IsClosed = !createdItem.IsSalesOpen(time.Now())
+	return createdItem, nil
 }
 
 func (r *eventRepository) UpdateEvent(ctx context.Context, id string, req *models.UpdateEventRequest) error {
@@ -317,14 +333,19 @@ func (r *eventRepository) UpdateEvent(ctx context.Context, id string, req *model
 		parsedDateTime = sql.NullTime{Time: dt, Valid: true}
 	}
 
+	var salesEndNullTime sql.NullTime
+	if req.SalesEndAt != nil && !req.SalesEndAt.IsZero() {
+		salesEndNullTime = sql.NullTime{Time: *req.SalesEndAt, Valid: true}
+	}
+
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE events
 		SET title = $1, artist = $2, venue = $3, date = $4, time = $5, category = $6, 
 		    category_badge_color = $7, image = $8, audio_url = COALESCE(NULLIF($9, ''), audio_url), conductor = $10, 
 		    open_gate = $11, address = $12, organizer = $13, subtitle = $14, rundown = $15, description = $16,
-		    event_date_time = $17
-		WHERE id = $18
-	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, strings.TrimSpace(req.AudioURL), req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, parsedDateTime, id)
+		    event_date_time = $17, sales_end_at = $18
+		WHERE id = $19
+	`, req.Title, req.Artist, req.Venue, req.Date, req.Time, req.Category, req.CategoryBadgeColor, req.Image, strings.TrimSpace(req.AudioURL), req.Conductor, req.OpenGate, req.Address, req.Organizer, req.Subtitle, string(rundownJSON), req.Description, parsedDateTime, salesEndNullTime, id)
 
 	if err != nil {
 		return fmt.Errorf("gagal memperbarui konser: %w", err)

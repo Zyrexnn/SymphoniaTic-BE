@@ -1863,6 +1863,9 @@
                         "$ref": "#/definitions/models.RundownItem"
                     }
                 },
+                "salesEndAt": {
+                    "type": "string"
+                },
                 "subtitle": {
                     "type": "string"
                 },
@@ -1965,6 +1968,9 @@
                     "items": {
                         "$ref": "#/definitions/models.RundownItem"
                     }
+                },
+                "salesEndAt": {
+                    "type": "string"
                 },
                 "subtitle": {
                     "type": "string"
@@ -2403,6 +2409,9 @@
                     "items": {
                         "$ref": "#/definitions/models.RundownItem"
                     }
+                },
+                "salesEndAt": {
+                    "type": "string"
                 },
                 "subtitle": {
                     "type": "string"

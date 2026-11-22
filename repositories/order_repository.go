@@ -38,11 +38,12 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	var evtTitle, evtArtist, evtVenue, evtDate, evtTime, evtOpenGate, evtAddress string
 	var evtClosed bool
 	var rawEventDateTime sql.NullTime
+	var rawSalesEndAt sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed, event_date_time
+		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed, event_date_time, sales_end_at
 		FROM events
 		WHERE id = $1
-	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed, &rawEventDateTime)
+	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed, &rawEventDateTime, &rawSalesEndAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -50,19 +51,21 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		return nil, fmt.Errorf("gagal mengambil data konser: %w", err)
 	}
 
-	if evtClosed {
-		return nil, ErrEventClosed
+	evalEvent := models.EventItem{
+		IsClosed: evtClosed,
 	}
-
-	now := time.Now()
 	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
-		if now.After(rawEventDateTime.Time) {
-			return nil, ErrEventClosed
-		}
+		t := rawEventDateTime.Time
+		evalEvent.EventDateTime = &t
 	} else if dt, parseErr := utils.ParseConcertDateTime(evtDate, evtTime); parseErr == nil && !dt.IsZero() {
-		if now.After(dt) {
-			return nil, ErrEventClosed
-		}
+		evalEvent.EventDateTime = &dt
+	}
+	if rawSalesEndAt.Valid && !rawSalesEndAt.Time.IsZero() {
+		t := rawSalesEndAt.Time
+		evalEvent.SalesEndAt = &t
+	}
+	if !evalEvent.IsSalesOpen(time.Now()) {
+		return nil, ErrEventClosed
 	}
 
 	if req.UserName == "" && authenticatedUserID != "" {
@@ -208,7 +211,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	attendeeNamesJSON := models.EncodeAttendeeNames(resolvedAttendees)
 	totalPrice := price * float64(req.Quantity)
 	dateFull := fmt.Sprintf("%s @ %s", evtDate, evtTime)
-	now = time.Now()
+	now := time.Now()
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, seat_numbers, attendee_names, checked_in_seats, status, payment_method, created_at)
@@ -432,9 +435,8 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 		return nil, ErrTicketNotIssued
 	}
 
-	if evtClosed {
-		return nil, ErrEventClosed
-	}
+	// Penutupan penjualan (is_closed) hanya memblokir pemesanan baru, bukan check-in tiket yang sudah sah
+	_ = evtClosed
 
 	var eventDateTime time.Time
 	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {

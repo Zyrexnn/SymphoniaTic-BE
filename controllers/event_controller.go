@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
@@ -83,7 +84,7 @@ func (c *EventController) GetEventSeats(ctx *fiber.Ctx) error {
 	return utils.ResponseOK(ctx, "Berhasil mengambil daftar kursi konser", seats)
 }
 
-func validateEventSchedule(openGate, eventTime string, rundown []models.RundownItem) string {
+func validateEventSchedule(date, openGate, eventTime string, rundown []models.RundownItem, salesEndAt *time.Time) string {
 	if strings.TrimSpace(openGate) == "" {
 		return "Waktu Open Gate wajib diisi"
 	}
@@ -95,6 +96,14 @@ func validateEventSchedule(openGate, eventTime string, rundown []models.RundownI
 	for _, item := range rundown {
 		if strings.TrimSpace(item.Time) == "" || strings.TrimSpace(item.Activity) == "" {
 			return "Setiap item rundown wajib memiliki waktu dan aktivitas"
+		}
+	}
+
+	if salesEndAt != nil && !salesEndAt.IsZero() {
+		if concertDT, err := utils.ParseConcertDateTime(date, eventTime); err == nil && !concertDT.IsZero() {
+			if salesEndAt.After(concertDT) {
+				return "Batas waktu penjualan tiket tidak boleh melebihi waktu mulai konser"
+			}
 		}
 	}
 
@@ -129,7 +138,7 @@ func (c *EventController) CreateEvent(ctx *fiber.Ctx) error {
 		})
 	}
 
-	if errMsg := validateEventSchedule(createEventReq.OpenGate, createEventReq.Time, createEventReq.Rundown); errMsg != "" {
+	if errMsg := validateEventSchedule(createEventReq.Date, createEventReq.OpenGate, createEventReq.Time, createEventReq.Rundown, createEventReq.SalesEndAt); errMsg != "" {
 		return utils.ResponseBadRequest(ctx, errMsg)
 	}
 
@@ -180,7 +189,7 @@ func (c *EventController) UpdateEvent(ctx *fiber.Ctx) error {
 		})
 	}
 
-	if errMsg := validateEventSchedule(updateEventReq.OpenGate, updateEventReq.Time, updateEventReq.Rundown); errMsg != "" {
+	if errMsg := validateEventSchedule(updateEventReq.Date, updateEventReq.OpenGate, updateEventReq.Time, updateEventReq.Rundown, updateEventReq.SalesEndAt); errMsg != "" {
 		return utils.ResponseBadRequest(ctx, errMsg)
 	}
 

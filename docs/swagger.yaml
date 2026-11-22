@@ -124,6 +124,8 @@ definitions:
         items:
           $ref: '#/definitions/models.RundownItem'
         type: array
+      salesEndAt:
+        type: string
       subtitle:
         type: string
       time:
@@ -192,6 +194,8 @@ definitions:
         items:
           $ref: '#/definitions/models.RundownItem'
         type: array
+      salesEndAt:
+        type: string
       subtitle:
         type: string
       time:
@@ -479,6 +483,8 @@ definitions:
         items:
           $ref: '#/definitions/models.RundownItem'
         type: array
+      salesEndAt:
+        type: string
       subtitle:
         type: string
       time:

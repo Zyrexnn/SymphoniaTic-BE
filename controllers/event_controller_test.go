@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
@@ -310,6 +311,76 @@ func TestEventController_CreateEvent(t *testing.T) {
 			t.Fatalf("Status tidak sesuai: ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("Sukses (201 Created) menerima salesEndAt sebelum konser dimulai", func(t *testing.T) {
+		var capturedSalesEndAt *time.Time
+		mockRepo := &repositories.MockEventRepository{
+			CreateEventFunc: func(ctx context.Context, req *models.CreateEventRequest) (*models.EventItem, error) {
+				capturedSalesEndAt = req.SalesEndAt
+				return &models.EventItem{ID: "evt-cutoff", Title: req.Title, SalesEndAt: req.SalesEndAt}, nil
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		wib := time.FixedZone("WIB", 7*3600)
+		cutoff := time.Date(2026, 12, 30, 17, 0, 0, 0, wib)
+
+		payload := models.CreateEventRequest{
+			Title:      "Simfoni Natal",
+			Artist:     "Jakarta Ensemble",
+			Venue:      "Aula Simfonia",
+			Date:       "2026-12-30",
+			Time:       "19:30 WIB",
+			OpenGate:   "18:00 WIB",
+			SalesEndAt: &cutoff,
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/events", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created, dapat %d", resp.StatusCode)
+		}
+		if capturedSalesEndAt == nil || !capturedSalesEndAt.Equal(cutoff) {
+			t.Fatalf("SalesEndAt tidak diteruskan ke repository: dapat %v", capturedSalesEndAt)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat salesEndAt melebihi waktu mulai konser", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+		wib := time.FixedZone("WIB", 7*3600)
+		lateCutoff := time.Date(2026, 12, 30, 21, 0, 0, 0, wib)
+
+		payload := models.CreateEventRequest{
+			Title:      "Simfoni Natal",
+			Artist:     "Jakarta Ensemble",
+			Venue:      "Aula Simfonia",
+			Date:       "2026-12-30",
+			Time:       "19:30 WIB",
+			OpenGate:   "18:00 WIB",
+			SalesEndAt: &lateCutoff,
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/events", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		if apiResp.Message != "Batas waktu penjualan tiket tidak boleh melebihi waktu mulai konser" {
+			t.Fatalf("Pesan error tidak sesuai: dapat %q", apiResp.Message)
+		}
+	})
 }
 
 func TestEventController_UpdateEvent(t *testing.T) {
@@ -389,6 +460,32 @@ func TestEventController_UpdateEvent(t *testing.T) {
 
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("Status tidak sesuai: ekspektasi 404 Not Found, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) saat UpdateEvent menetapkan salesEndAt melewati konser dimulai", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+		wib := time.FixedZone("WIB", 7*3600)
+		lateCutoff := time.Date(2026, 12, 30, 20, 0, 0, 0, wib)
+
+		payload := models.UpdateEventRequest{
+			Title:      "Judul Baru",
+			Date:       "2026-12-30",
+			Time:       "19:30 WIB",
+			OpenGate:   "18:00 WIB",
+			SalesEndAt: &lateCutoff,
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("PUT", "/api/v1/admin/events/evt-01", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
 }

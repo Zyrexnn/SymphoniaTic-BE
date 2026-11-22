@@ -514,29 +514,35 @@ func TestOrderRepository_EnrichedQueriesAndRemindedCheckIn(t *testing.T) {
 func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("Menolak check-in ketika konser ditutup (is_closed = true)", func(t *testing.T) {
+	t.Run("Tetap mengizinkan check-in tiket sah meskipun penjualan ditutup (is_closed = true)", func(t *testing.T) {
 		state := &stubDBState{
 			queryRouter: func(query string, args []driver.Value) stubQueryResult {
-				return stubQueryResult{
-					columns: []string{
-						"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
-						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
-						"attendee_names", "checked_in_seats",
-						"status", "payment_method", "created_at",
-						"is_closed", "open_gate", "time", "event_date_time",
-					},
-					rows: [][]driver.Value{{
-						"ord-1", "SYM-CLOSED", "usr-1", "evt-1", "Simfoni Ditutup", "Jakarta Orchestra", "Aula Simfonia",
-						time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
-						"QR-SYM-CLOSED", "A-1", "", "", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
-						true, "", "", time.Now().Add(-10 * time.Minute),
-					}},
+				if strings.Contains(query, "FROM orders o") {
+					return stubQueryResult{
+						columns: []string{
+							"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
+							"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
+							"attendee_names", "checked_in_seats",
+							"status", "payment_method", "created_at",
+							"is_closed", "open_gate", "time", "event_date_time",
+						},
+						rows: [][]driver.Value{{
+							"ord-1", "SYM-CLOSED", "usr-1", "evt-1", "Simfoni Ditutup", "Jakarta Orchestra", "Aula Simfonia",
+							time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
+							"QR-SYM-CLOSED", "A-1", "", "", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
+							true, "", "", time.Now().Add(-10 * time.Minute),
+						}},
+					}
 				}
+				return stubQueryResult{}
 			},
 		}
-		_, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-CLOSED", false)
-		if !errors.Is(err, ErrEventClosed) {
-			t.Fatalf("Ekspektasi ErrEventClosed, dapat: %v", err)
+		checkedIn, err := NewOrderRepository(newStubDB(t, state)).CheckInTicket(ctx, "SYM-CLOSED", false)
+		if err != nil {
+			t.Fatalf("Check-in tiket sah tidak boleh terblokir saat penjualan ditutup, dapat error: %v", err)
+		}
+		if checkedIn.Status != "CHECKED_IN" {
+			t.Fatalf("Ekspektasi status CHECKED_IN, dapat: %s", checkedIn.Status)
 		}
 	})
 
@@ -846,8 +852,8 @@ func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
-						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
 					return stubQueryResult{
@@ -906,8 +912,8 @@ func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
-						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
 					return stubQueryResult{
@@ -944,8 +950,8 @@ func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
-						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
 					return stubQueryResult{
@@ -1011,8 +1017,8 @@ func TestOrderRepository_CreateOrderMultipleTicketsWithAttendees(t *testing.T) {
 			switch {
 			case strings.Contains(query, "FROM events"):
 				return stubQueryResult{
-					columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time"},
-					rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate}},
+					columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+					rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
 				}
 			case strings.Contains(query, "FROM ticket_categories"):
 				return stubQueryResult{
@@ -1203,6 +1209,96 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 		clean, base, seat := parseTicketLookupCode("QR-SYM-7K9P2X8M-F-10")
 		if clean != "SYM-7K9P2X8M-F-10" || base != "SYM-7K9P2X8M" || seat != "F-10" {
 			t.Fatalf("Hasil parsing tidak sesuai: clean=%q base=%q seat=%q", clean, base, seat)
+		}
+	})
+}
+
+func TestOrderRepository_CreateOrderSalesCutoff(t *testing.T) {
+	ctx := context.Background()
+	futureConcert := time.Now().Add(48 * time.Hour)
+
+	t.Run("Menolak order ketika sales_end_at sudah lewat meskipun konser belum mulai", func(t *testing.T) {
+		pastCutoff := time.Now().Add(-1 * time.Hour)
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				if strings.Contains(query, "FROM events") {
+					return stubQueryResult{
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureConcert, pastCutoff}},
+					}
+				}
+				return stubQueryResult{}
+			},
+		}
+		_, err := NewOrderRepository(newStubDB(t, state)).CreateOrder(ctx, &models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         1,
+			UserName:         "Agustin",
+			UserEmail:        "agus@gmail.com",
+		}, "")
+		if !errors.Is(err, ErrEventClosed) {
+			t.Fatalf("Ekspektasi ErrEventClosed saat sales_end_at terlewati, dapat: %v", err)
+		}
+	})
+
+	t.Run("Mengizinkan order ketika sales_end_at di masa depan dan is_closed = false", func(t *testing.T) {
+		futureCutoff := time.Now().Add(2 * time.Hour)
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				switch {
+				case strings.Contains(query, "FROM events"):
+					return stubQueryResult{
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureConcert, futureCutoff}},
+					}
+				case strings.Contains(query, "FROM ticket_categories"):
+					return stubQueryResult{
+						columns: []string{"id", "event_id", "name", "price", "quota", "remaining_quota"},
+						rows:    [][]driver.Value{{"cat-vip", "evt-1", "VIP Pit", float64(750000), int64(14), int64(14)}},
+					}
+				default:
+					return stubQueryResult{}
+				}
+			},
+		}
+		rec, err := NewOrderRepository(newStubDB(t, state)).CreateOrder(ctx, &models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         1,
+			UserName:         "Agustin",
+			UserEmail:        "agus@gmail.com",
+		}, "")
+		if err != nil {
+			t.Fatalf("Ekspektasi order berhasil saat sales_end_at di masa depan, dapat error: %v", err)
+		}
+		if rec == nil || rec.EventID != "evt-1" {
+			t.Fatalf("Data order tidak sesuai: %+v", rec)
+		}
+	})
+
+	t.Run("Manual override is_closed = true tetap menolak order meski sales_end_at di masa depan", func(t *testing.T) {
+		futureCutoff := time.Now().Add(2 * time.Hour)
+		state := &stubDBState{
+			queryRouter: func(query string, args []driver.Value) stubQueryResult {
+				if strings.Contains(query, "FROM events") {
+					return stubQueryResult{
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", true, futureConcert, futureCutoff}},
+					}
+				}
+				return stubQueryResult{}
+			},
+		}
+		_, err := NewOrderRepository(newStubDB(t, state)).CreateOrder(ctx, &models.CreateOrderRequest{
+			EventID:          "evt-1",
+			TicketCategoryID: "cat-vip",
+			Quantity:         1,
+			UserName:         "Agustin",
+			UserEmail:        "agus@gmail.com",
+		}, "")
+		if !errors.Is(err, ErrEventClosed) {
+			t.Fatalf("Ekspektasi ErrEventClosed saat is_closed = true, dapat: %v", err)
 		}
 	})
 }

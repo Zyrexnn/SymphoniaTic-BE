@@ -1869,6 +1869,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/models.RundownItem"
                     }
                 },
+                "salesEndAt": {
+                    "type": "string"
+                },
                 "subtitle": {
                     "type": "string"
                 },
@@ -1971,6 +1974,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.RundownItem"
                     }
+                },
+                "salesEndAt": {
+                    "type": "string"
                 },
                 "subtitle": {
                     "type": "string"
@@ -2409,6 +2415,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/models.RundownItem"
                     }
+                },
+                "salesEndAt": {
+                    "type": "string"
                 },
                 "subtitle": {
                     "type": "string"
