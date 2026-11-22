@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"log"
 	"os"
@@ -23,17 +25,30 @@ type ResetClaims struct {
 	jwt.RegisteredClaims
 }
 
-var jwtFallbackWarnOnce sync.Once
+var (
+	jwtFallbackWarnOnce sync.Once
+	ephemeralSecret     []byte
+)
 
 func getJWTSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		jwtFallbackWarnOnce.Do(func() {
-			log.Println("PERINGATAN KEAMANAN: Variabel lingkungan JWT_SECRET tidak diatur; menggunakan kunci fallback default yang tidak aman untuk produksi.")
-		})
-		secret = "symphoniatic-super-secret-jwt-key-2026"
+	if secret != "" {
+		return []byte(secret)
 	}
-	return []byte(secret)
+	jwtFallbackWarnOnce.Do(func() {
+		log.Println("PERINGATAN KEAMANAN: Variabel lingkungan JWT_SECRET tidak diatur; menggunakan kunci acak sementara khusus proses uji.")
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			ephemeralSecret = []byte(fmtFallbackSecret())
+			return
+		}
+		ephemeralSecret = []byte(hex.EncodeToString(buf))
+	})
+	return ephemeralSecret
+}
+
+func fmtFallbackSecret() string {
+	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
 // GenerateUserToken generates a JWT Auth Token valid for 24 hours.

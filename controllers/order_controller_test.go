@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -479,15 +480,23 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 	})
 
 	t.Run("Gagal (400 Bad Request) saat tiket sudah pernah digunakan", func(t *testing.T) {
+		prevScanAt := time.Date(2026, 11, 22, 18, 30, 0, 0, time.UTC)
 		mockRepo := &repositories.MockOrderRepository{
 			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
-				return nil, repositories.ErrTicketAlreadyUsed
+				return &models.OrderRecord{
+					ID:                "ord-used",
+					OrderCode:         "SYM-ALREADY-USED",
+					UserName:          "Budi",
+					CheckedInSeat:     "A-1",
+					CheckedInAttendee: "Siti",
+					CheckedInAt:       &prevScanAt,
+				}, repositories.ErrTicketAlreadyUsed
 			},
 		}
 
 		app := setupOrderControllerTest(mockRepo)
 		payload := models.CheckInRequest{
-			Code: "SYM-ALREADY-USED",
+			Code: "SYM-ALREADY-USED-A-1",
 		}
 		bodyBytes, _ := json.Marshal(payload)
 
@@ -504,8 +513,12 @@ func TestTicketController_CheckInTicket(t *testing.T) {
 
 		var apiResp models.APIResponse
 		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
-		if apiResp.Message != "Tiket ini sudah pernah digunakan untuk check-in sebelumnya" {
-			t.Fatalf("Pesan respons tidak sesuai: dapat %s", apiResp.Message)
+		if !strings.Contains(apiResp.Message, "Siti") || !strings.Contains(apiResp.Message, "A-1") {
+			t.Fatalf("Pesan respons seharusnya memuat nama pemilik kursi dan nomor kursi, dapat: %s", apiResp.Message)
+		}
+		dataMap, ok := apiResp.Data.(map[string]interface{})
+		if !ok || dataMap["checkedInAttendee"] != "Siti" || dataMap["checkedInAt"] == nil {
+			t.Fatalf("Payload data pada ErrTicketAlreadyUsed seharusnya menyertakan checkedInAttendee & checkedInAt, dapat: %+v", apiResp.Data)
 		}
 	})
 

@@ -191,3 +191,15 @@ func TestRouter_RateLimiting(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateServerConfig_RequiresJWTSecret(t *testing.T) {
+	cfg := setupTestRouter()
+	cfg.Auth.JWTSecret = ""
+	if err := validateServerConfig(cfg); err == nil {
+		t.Fatalf("Ekspektasi error saat JWT_SECRET kosong, dapat nil")
+	}
+	cfg.Auth.JWTSecret = "symphoniatic-valid-secret-key"
+	if err := validateServerConfig(cfg); err != nil {
+		t.Fatalf("Ekspektasi valid saat JWT_SECRET terisi, dapat: %v", err)
+	}
+}

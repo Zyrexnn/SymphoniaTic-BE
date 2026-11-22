@@ -391,9 +391,40 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 	record.OpenGate = evtOpenGate
 	record.EventTime = evtTime
 
+	var orderCheckedInAt sql.NullTime
+	var rawSeatCheckins string
+	_ = tx.QueryRowContext(ctx, `
+		SELECT checked_in_at, COALESCE(seat_checkins, '')
+		FROM orders
+		WHERE id = $1
+	`, record.ID).Scan(&orderCheckedInAt, &rawSeatCheckins)
+	seatCheckinsMap := models.ParseSeatCheckins(rawSeatCheckins)
+
+	populateAlreadyUsedDetails := func(seat string) {
+		models.BuildOrderTickets(&record)
+		cleanSeat := strings.TrimSpace(seat)
+		if cleanSeat != "" {
+			record.CheckedInSeat = cleanSeat
+			record.CheckedInAttendee = models.ResolveTicketAttendee(&record, cleanSeat)
+			if tsRaw, ok := seatCheckinsMap[strings.ToUpper(cleanSeat)]; ok {
+				if parsed, parseErr := time.Parse(time.RFC3339, tsRaw); parseErr == nil {
+					record.CheckedInAt = &parsed
+				}
+			}
+		} else {
+			record.CheckedInSeat = record.SeatNumbers
+			record.CheckedInAttendee = record.UserName
+		}
+		if record.CheckedInAt == nil && orderCheckedInAt.Valid && !orderCheckedInAt.Time.IsZero() {
+			ts := orderCheckedInAt.Time
+			record.CheckedInAt = &ts
+		}
+	}
+
 	switch strings.ToUpper(strings.TrimSpace(record.Status)) {
 	case "CHECKED_IN":
-		return nil, ErrTicketAlreadyUsed
+		populateAlreadyUsedDetails(targetSeat)
+		return &record, ErrTicketAlreadyUsed
 	case "REFUNDED", "REFUND_REQUESTED", "CANCELLED":
 		return nil, ErrTicketInvalid
 	case "ISSUED", "VERIFIED", "REMINDED":
@@ -457,11 +488,18 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 		}
 		for _, cs := range checkedSeats {
 			if strings.EqualFold(cs, matchedSeat) {
-				return nil, ErrTicketAlreadyUsed
+				populateAlreadyUsedDetails(matchedSeat)
+				return &record, ErrTicketAlreadyUsed
 			}
 		}
 		checkedSeats = append(checkedSeats, matchedSeat)
 		record.CheckedInSeats = strings.Join(checkedSeats, ", ")
+		nowUTC := time.Now().UTC()
+		seatCheckinsMap[strings.ToUpper(matchedSeat)] = nowUTC.Format(time.RFC3339)
+		encodedSeatCheckins := models.EncodeSeatCheckins(seatCheckinsMap)
+		record.CheckedInSeat = matchedSeat
+		record.CheckedInAttendee = models.ResolveTicketAttendee(&record, matchedSeat)
+		record.CheckedInAt = &nowUTC
 
 		checkedMap := make(map[string]bool, len(checkedSeats))
 		for _, cs := range checkedSeats {
@@ -476,16 +514,27 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 		}
 
 		if allEntered {
-			_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN', checked_in_seats = $1 WHERE id = $2", record.CheckedInSeats, record.ID)
+			_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN', checked_in_seats = $1, seat_checkins = $2, checked_in_at = COALESCE(checked_in_at, $3) WHERE id = $4", record.CheckedInSeats, encodedSeatCheckins, nowUTC, record.ID)
 			if err == nil {
 				record.Status = "CHECKED_IN"
 			}
 		} else {
-			_, err = tx.ExecContext(ctx, "UPDATE orders SET checked_in_seats = $1 WHERE id = $2", record.CheckedInSeats, record.ID)
+			_, err = tx.ExecContext(ctx, "UPDATE orders SET checked_in_seats = $1, seat_checkins = $2, checked_in_at = COALESCE(checked_in_at, $3) WHERE id = $4", record.CheckedInSeats, encodedSeatCheckins, nowUTC, record.ID)
 		}
 	} else {
+		nowUTC := time.Now().UTC()
+		for _, s := range orderSeats {
+			key := strings.ToUpper(strings.TrimSpace(s))
+			if key != "" && seatCheckinsMap[key] == "" {
+				seatCheckinsMap[key] = nowUTC.Format(time.RFC3339)
+			}
+		}
+		encodedSeatCheckins := models.EncodeSeatCheckins(seatCheckinsMap)
 		record.CheckedInSeats = record.SeatNumbers
-		_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN', checked_in_seats = $1 WHERE id = $2", record.CheckedInSeats, record.ID)
+		record.CheckedInSeat = record.SeatNumbers
+		record.CheckedInAttendee = record.UserName
+		record.CheckedInAt = &nowUTC
+		_, err = tx.ExecContext(ctx, "UPDATE orders SET status = 'CHECKED_IN', checked_in_seats = $1, seat_checkins = $2, checked_in_at = COALESCE(checked_in_at, $3) WHERE id = $4", record.CheckedInSeats, encodedSeatCheckins, nowUTC, record.ID)
 		if err == nil {
 			record.Status = "CHECKED_IN"
 		}

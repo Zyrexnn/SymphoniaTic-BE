@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -1101,7 +1102,9 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 
 	t.Run("Partial check-in per kursi dan penolakan scan ulang kursi yang sama", func(t *testing.T) {
 		pastStart := time.Now().Add(-30 * time.Minute)
+		firstScanAt := time.Now().Add(-5 * time.Minute).UTC()
 		checkedInSeats := ""
+		seatCheckins := ""
 		orderStatus := "ISSUED"
 
 		state := &stubDBState{
@@ -1124,6 +1127,16 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 						}},
 					}
 				}
+				if strings.Contains(query, "seat_checkins") && strings.Contains(query, "FROM orders") {
+					var checkedAtVal driver.Value
+					if checkedInSeats != "" {
+						checkedAtVal = firstScanAt
+					}
+					return stubQueryResult{
+						columns: []string{"checked_in_at", "seat_checkins"},
+						rows:    [][]driver.Value{{checkedAtVal, seatCheckins}},
+					}
+				}
 				return stubQueryResult{}
 			},
 		}
@@ -1137,9 +1150,14 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 			t.Fatalf("Ekspektasi partial check-in A-1 dengan status ISSUED, dapat status=%s checked=%s", rec1.Status, rec1.CheckedInSeats)
 		}
 		checkedInSeats = "A-1"
+		seatCheckins = fmt.Sprintf(`{"A-1":"%s"}`, firstScanAt.Format(time.RFC3339))
 
-		if _, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-1", false); !errors.Is(err, ErrTicketAlreadyUsed) {
+		dupRec, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-1", false)
+		if !errors.Is(err, ErrTicketAlreadyUsed) {
 			t.Fatalf("Ekspektasi ErrTicketAlreadyUsed saat scan ulang A-1, dapat: %v", err)
+		}
+		if dupRec == nil || dupRec.CheckedInSeat != "A-1" || dupRec.CheckedInAttendee != "Budi" || dupRec.CheckedInAt == nil {
+			t.Fatalf("Ekspektasi detail kursi, pemilik (Budi), dan waktu check-in sebelumnya pada ErrTicketAlreadyUsed, dapat: %+v", dupRec)
 		}
 
 		rec2, err := repo.CheckInTicket(ctx, "QR-SYM-100001-A-2", false)

@@ -114,6 +114,8 @@ func initSchema() {
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS seat_numbers VARCHAR(255) DEFAULT '';
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS attendee_names TEXT DEFAULT '';
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS checked_in_seats VARCHAR(255) DEFAULT '';
+	ALTER TABLE orders ADD COLUMN IF NOT EXISTS seat_checkins TEXT DEFAULT '';
+	ALTER TABLE orders ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
 	CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_event_id ON orders(event_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_user_email_lower ON orders(LOWER(user_email));

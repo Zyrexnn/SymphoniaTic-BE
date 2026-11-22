@@ -90,11 +90,14 @@ type OrderRecord struct {
 	TotalPrice     float64      `json:"totalPrice"`
 	UserName       string       `json:"userName"`
 	UserEmail      string       `json:"userEmail"`
-	QRCode         string       `json:"qrCode"`
-	SeatNumbers    string       `json:"seatNumbers"`
-	AttendeeNames  string       `json:"attendeeNames,omitempty"`
-	CheckedInSeats string       `json:"checkedInSeats,omitempty"`
-	Tickets        []TicketItem `json:"tickets,omitempty"`
+	QRCode            string       `json:"qrCode"`
+	SeatNumbers       string       `json:"seatNumbers"`
+	AttendeeNames     string       `json:"attendeeNames,omitempty"`
+	CheckedInSeats    string       `json:"checkedInSeats,omitempty"`
+	CheckedInAt       *time.Time   `json:"checkedInAt,omitempty"`
+	CheckedInSeat     string       `json:"checkedInSeat,omitempty"`
+	CheckedInAttendee string       `json:"checkedInAttendee,omitempty"`
+	Tickets           []TicketItem `json:"tickets,omitempty"`
 	Status         string       `json:"status"`
 	PaymentMethod  string       `json:"paymentMethod"`
 	CreatedAt      time.Time    `json:"createdAt"`
@@ -463,4 +466,54 @@ func BuildOrderTickets(record *OrderRecord) {
 		})
 	}
 	record.Tickets = tickets
+}
+
+// ParseSeatCheckins membaca peta JSON stempel waktu check-in per kursi.
+func ParseSeatCheckins(raw string) map[string]string {
+	result := make(map[string]string)
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "{") {
+		return result
+	}
+	var parsed map[string]string
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+		for k, v := range parsed {
+			key := strings.ToUpper(strings.TrimSpace(k))
+			if key != "" && strings.TrimSpace(v) != "" {
+				result[key] = strings.TrimSpace(v)
+			}
+		}
+	}
+	return result
+}
+
+// EncodeSeatCheckins menyerialisasi peta stempel waktu check-in per kursi ke JSON.
+func EncodeSeatCheckins(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+// ResolveTicketAttendee mengambil nama pemegang kursi tertentu dari metadata tiket pesanan.
+func ResolveTicketAttendee(record *OrderRecord, targetSeat string) string {
+	if record == nil {
+		return ""
+	}
+	if len(record.Tickets) == 0 {
+		BuildOrderTickets(record)
+	}
+	cleanSeat := strings.ToUpper(strings.TrimSpace(targetSeat))
+	if cleanSeat != "" {
+		for _, t := range record.Tickets {
+			if strings.EqualFold(strings.TrimSpace(t.SeatCode), cleanSeat) && strings.TrimSpace(t.AttendeeName) != "" {
+				return strings.TrimSpace(t.AttendeeName)
+			}
+		}
+	}
+	return strings.TrimSpace(record.UserName)
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
@@ -98,9 +99,31 @@ func (c *TicketController) CheckInTicket(ctx *fiber.Ctx) error {
 			})
 		}
 		if errors.Is(err, repositories.ErrTicketAlreadyUsed) {
+			msg := "Tiket ini sudah pernah digunakan untuk check-in sebelumnya"
+			if orderRecord != nil {
+				seatPart := ""
+				if strings.TrimSpace(orderRecord.CheckedInSeat) != "" {
+					seatPart = fmt.Sprintf(" kursi %s", orderRecord.CheckedInSeat)
+				}
+				attendeePart := ""
+				if strings.TrimSpace(orderRecord.CheckedInAttendee) != "" {
+					attendeePart = fmt.Sprintf(" atas nama %s", orderRecord.CheckedInAttendee)
+				} else if strings.TrimSpace(orderRecord.UserName) != "" {
+					attendeePart = fmt.Sprintf(" atas nama %s", orderRecord.UserName)
+				}
+				timePart := ""
+				if orderRecord.CheckedInAt != nil && !orderRecord.CheckedInAt.IsZero() {
+					wib := time.FixedZone("WIB", 7*3600)
+					timePart = fmt.Sprintf(" pada %s", orderRecord.CheckedInAt.In(wib).Format("02 Jan 2006 15:04 WIB"))
+				}
+				if seatPart != "" || attendeePart != "" || timePart != "" {
+					msg = fmt.Sprintf("Tiket%s%s sudah pernah digunakan untuk check-in%s", seatPart, attendeePart, timePart)
+				}
+			}
 			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 				Success: false,
-				Message: "Tiket ini sudah pernah digunakan untuk check-in sebelumnya",
+				Message: msg,
+				Data:    orderRecord,
 			})
 		}
 		if errors.Is(err, repositories.ErrTicketInvalid) {

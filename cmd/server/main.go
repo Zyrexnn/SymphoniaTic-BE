@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -162,10 +163,20 @@ func setupRouter(
 	return app
 }
 
+func validateServerConfig(cfg *config.Config) error {
+	if cfg == nil || strings.TrimSpace(cfg.Auth.JWTSecret) == "" {
+		return fmt.Errorf("variabel lingkungan JWT_SECRET wajib diisi sebelum menjalankan server")
+	}
+	return nil
+}
+
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Gagal memuat konfigurasi server: %v", err)
+	}
+	if err := validateServerConfig(cfg); err != nil {
+		log.Fatalf("Konfigurasi keamanan server tidak valid: %v", err)
 	}
 
 	database.ConnectDBWithConfig(&cfg.Database)
