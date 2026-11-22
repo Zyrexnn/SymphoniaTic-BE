@@ -8,16 +8,19 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/config"
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	_ "github.com/Zyrexnn/SymphoniaTic-be/docs"
 	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
+	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
 	"github.com/Zyrexnn/SymphoniaTic-be/services"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/swagger"
 )
@@ -40,6 +43,19 @@ import (
 // @in header
 // @name Authorization
 // @description Type "Bearer <your_token>" to authenticate user/admin endpoints.
+
+func newRateLimiter(maxRequests int, expiration time.Duration) fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        maxRequests,
+		Expiration: expiration,
+		LimitReached: func(ctx *fiber.Ctx) error {
+			return ctx.Status(fiber.StatusTooManyRequests).JSON(models.APIResponse{
+				Success: false,
+				Message: "Terlalu banyak permintaan. Silakan tunggu beberapa saat lagi.",
+			})
+		},
+	})
+}
 
 func setupRouter(
 	cfg *config.Config,
@@ -79,28 +95,32 @@ func setupRouter(
 
 	api := app.Group("/api/v1")
 
+	authRateLimiter := newRateLimiter(10, 1*time.Minute)
+	lookupRateLimiter := newRateLimiter(30, 1*time.Minute)
+	orderRateLimiter := newRateLimiter(15, 1*time.Minute)
+
 	// Public Endpoints
 	api.Get("/events", eventCtrl.GetEvents)
 	api.Get("/events/:id", eventCtrl.GetEventByID)
 	api.Get("/events/:id/seats", eventCtrl.GetEventSeats)
-	api.Post("/orders", orderCtrl.CreateOrder)
-	api.Get("/tickets/lookup", ticketCtrl.LookupTicketByCode)
+	api.Post("/orders", orderRateLimiter, orderCtrl.CreateOrder)
+	api.Get("/tickets/lookup", lookupRateLimiter, ticketCtrl.LookupTicketByCode)
 
 	// Refund Routes
-	api.Post("/refunds/request-otp", refundCtrl.RequestRefundOTP)
-	api.Post("/refunds/submit", refundCtrl.SubmitRefund)
-	api.Post("/refunds/status", refundCtrl.GetRefundStatus)
+	api.Post("/refunds/request-otp", authRateLimiter, refundCtrl.RequestRefundOTP)
+	api.Post("/refunds/submit", authRateLimiter, refundCtrl.SubmitRefund)
+	api.Post("/refunds/status", lookupRateLimiter, refundCtrl.GetRefundStatus)
 
 	// User Authentication Endpoints
 	auth := api.Group("/auth")
-	auth.Post("/register/request-otp", controllers.RequestRegisterOTP)
-	auth.Post("/register/verify-otp", controllers.VerifyRegisterOTP)
-	auth.Post("/login/password", controllers.PasswordLogin)
-	auth.Post("/login/request-otp", controllers.RequestLoginOTP)
-	auth.Post("/login/verify-otp", controllers.VerifyLoginOTP)
-	auth.Post("/forgot-password/request-otp", controllers.RequestForgotPasswordOTP)
-	auth.Post("/forgot-password/verify-otp", controllers.VerifyForgotPasswordOTP)
-	auth.Post("/forgot-password/reset", controllers.ResetPassword)
+	auth.Post("/register/request-otp", authRateLimiter, controllers.RequestRegisterOTP)
+	auth.Post("/register/verify-otp", authRateLimiter, controllers.VerifyRegisterOTP)
+	auth.Post("/login/password", authRateLimiter, controllers.PasswordLogin)
+	auth.Post("/login/request-otp", authRateLimiter, controllers.RequestLoginOTP)
+	auth.Post("/login/verify-otp", authRateLimiter, controllers.VerifyLoginOTP)
+	auth.Post("/forgot-password/request-otp", authRateLimiter, controllers.RequestForgotPasswordOTP)
+	auth.Post("/forgot-password/verify-otp", authRateLimiter, controllers.VerifyForgotPasswordOTP)
+	auth.Post("/forgot-password/reset", authRateLimiter, controllers.ResetPassword)
 	auth.Get("/me", middleware.RequireUserAuth, controllers.GetMyProfile)
 
 	// Protected User Account Endpoints
@@ -113,7 +133,7 @@ func setupRouter(
 	userGroup.Get("/refunds", controllers.GetUserRefunds)
 
 	admin := api.Group("/admin")
-	admin.Post("/login", adminCtrl.AdminLogin)
+	admin.Post("/login", authRateLimiter, adminCtrl.AdminLogin)
 
 	// Pemisahan middleware per-rute (alih-alih Group("")) agar otorisasi ADMIN tidak bocor memblokir rute PETUGAS di prefix /admin yang sama
 	requireAdminOnly := middleware.RequireAdminAuth("ADMIN")

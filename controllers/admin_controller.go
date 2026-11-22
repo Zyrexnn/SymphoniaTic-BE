@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,10 @@ func NewAdminController(repo repositories.OrderRepository, authCfg *config.AuthC
 		repo:    repo,
 		authCfg: authCfg,
 	}
+}
+
+func constantTimeMatch(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 // AdminLogin godoc
@@ -71,11 +76,11 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 	var authenticatedName string
 	var authenticatedID string
 
-	if adminLoginReq.Username == adminUser && adminLoginReq.Password == adminPass {
+	if constantTimeMatch(adminLoginReq.Username, adminUser) && constantTimeMatch(adminLoginReq.Password, adminPass) {
 		authenticatedRole = "ADMIN"
 		authenticatedName = "Super Administrator"
 		authenticatedID = "admin-1"
-	} else if adminLoginReq.Username == petugasUser && adminLoginReq.Password == petugasPass {
+	} else if petugasUser != "" && petugasPass != "" && constantTimeMatch(adminLoginReq.Username, petugasUser) && constantTimeMatch(adminLoginReq.Password, petugasPass) {
 		authenticatedRole = "PETUGAS"
 		authenticatedName = "Petugas Gate Officer"
 		authenticatedID = "petugas-1"

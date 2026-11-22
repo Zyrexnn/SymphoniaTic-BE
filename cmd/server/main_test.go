@@ -146,3 +146,48 @@ func TestRouter_RoleAuthorizationSegregation(t *testing.T) {
 		})
 	}
 }
+
+func TestRouter_RateLimiting(t *testing.T) {
+	t.Setenv("JWT_SECRET", "symphoniatic-test-jwt-secret-key-min-32")
+
+	cfg := setupTestRouter()
+	eventRepo := &repositories.MockEventRepository{}
+	orderRepo := &repositories.MockOrderRepository{
+		LookupTicketByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+			return nil, repositories.ErrNotFound
+		},
+	}
+	refundRepo := &repositories.MockRefundRepository{}
+	app := setupRouter(cfg, eventRepo, orderRepo, refundRepo)
+
+	t.Run("Menolak permintaan berlebih pada /tickets/lookup dengan 429 Too Many Requests", func(t *testing.T) {
+		var lastStatus int
+		for i := 0; i < 31; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/tickets/lookup?code=SYM-000001", nil)
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				t.Fatalf("Gagal mengirim request ke-%d: %v", i, err)
+			}
+			lastStatus = resp.StatusCode
+		}
+		if lastStatus != http.StatusTooManyRequests {
+			t.Fatalf("Ekspektasi 429 Too Many Requests pada request ke-31, dapat: %d", lastStatus)
+		}
+	})
+
+	t.Run("Menolak login admin berulang dengan 429 Too Many Requests", func(t *testing.T) {
+		var lastStatus int
+		for i := 0; i < 11; i++ {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", strings.NewReader(`{"username":"admin","password":"wrong"}`))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				t.Fatalf("Gagal mengirim request login ke-%d: %v", i, err)
+			}
+			lastStatus = resp.StatusCode
+		}
+		if lastStatus != http.StatusTooManyRequests {
+			t.Fatalf("Ekspektasi 429 Too Many Requests pada request login ke-11, dapat: %d", lastStatus)
+		}
+	})
+}

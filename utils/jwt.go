@@ -2,7 +2,9 @@ package utils
 
 import (
 	"errors"
+	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -21,9 +23,14 @@ type ResetClaims struct {
 	jwt.RegisteredClaims
 }
 
+var jwtFallbackWarnOnce sync.Once
+
 func getJWTSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
+		jwtFallbackWarnOnce.Do(func() {
+			log.Println("PERINGATAN KEAMANAN: Variabel lingkungan JWT_SECRET tidak diatur; menggunakan kunci fallback default yang tidak aman untuk produksi.")
+		})
 		secret = "symphoniatic-super-secret-jwt-key-2026"
 	}
 	return []byte(secret)

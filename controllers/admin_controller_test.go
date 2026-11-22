@@ -164,6 +164,31 @@ func TestAdminController_AdminLogin(t *testing.T) {
 		}
 	})
 
+	t.Run("Menolak login kosong ketika kredensial PETUGAS tidak dikonfigurasi (401 Unauthorized)", func(t *testing.T) {
+		cfgNoPetugas := &config.AuthConfig{
+			AdminUsername: "admin_symphonia",
+			AdminPassword: "AdminSecret2026!",
+		}
+		mockRepo := &repositories.MockOrderRepository{}
+		app := setupAdminControllerTest(mockRepo, cfgNoPetugas)
+
+		payload := models.AdminLoginRequest{
+			Username: "",
+			Password: "",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest("POST", "/api/v1/admin/login", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("Ekspektasi 401 Unauthorized untuk kredensial kosong, dapat %d", resp.StatusCode)
+		}
+	})
+
 	t.Run("Gagal (400 Bad Request) saat ekstensi file tidak diizinkan", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{}
 		app := setupAdminControllerTest(mockRepo, nil)
