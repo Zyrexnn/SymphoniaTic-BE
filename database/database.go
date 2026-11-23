@@ -252,12 +252,37 @@ func initSchema() {
 		target_resource VARCHAR(150) NOT NULL,
 		details TEXT DEFAULT '',
 		ip_address VARCHAR(45) DEFAULT '',
+		category VARCHAR(30) NOT NULL DEFAULT 'OPERATIONAL',
+		severity VARCHAR(20) NOT NULL DEFAULT 'INFO',
+		status_code INT NOT NULL DEFAULT 200,
+		user_agent TEXT DEFAULT '',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
+
+	ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS category VARCHAR(30) NOT NULL DEFAULT 'OPERATIONAL';
+	ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS severity VARCHAR(20) NOT NULL DEFAULT 'INFO';
+	ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status_code INT NOT NULL DEFAULT 200;
+	ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_agent TEXT DEFAULT '';
 
 	CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
 	CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_role ON audit_logs(actor_role);
+	CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category);
+	CREATE INDEX IF NOT EXISTS idx_audit_logs_severity ON audit_logs(severity);
+	CREATE INDEX IF NOT EXISTS idx_audit_logs_ip_address ON audit_logs(ip_address);
+
+	CREATE TABLE IF NOT EXISTS blocked_ips (
+		id VARCHAR(64) PRIMARY KEY,
+		ip_address VARCHAR(45) NOT NULL,
+		reason TEXT NOT NULL,
+		blocked_by VARCHAR(100) NOT NULL,
+		is_auto BOOLEAN NOT NULL DEFAULT FALSE,
+		is_active BOOLEAN NOT NULL DEFAULT TRUE,
+		expires_at TIMESTAMP WITH TIME ZONE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_blocked_ips_ip_active ON blocked_ips(ip_address, is_active);
 	`
 
 	_, err := DB.Exec(schemaQuery)
@@ -265,7 +290,7 @@ func initSchema() {
 		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
 	}
 
-	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps, promotions, admin_users, audit_logs) siap")
+	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps, promotions, admin_users, audit_logs, blocked_ips) siap")
 	seedInitialData()
 	ensurePromotionsSeeded()
 	ensureAdminUsersSeeded()
@@ -401,7 +426,7 @@ func seedInitialData() {
 			Time:      "19:30 WIB",
 			Category:  "SIMFONI UTAMA",
 			BadgeCol:  "bg-blue-900/80 text-blue-200 border-blue-500/40",
-			Image:     "https://images.unsplash.com/photo-1465847899084-d164df4dedc6?q=80&w=1000&auto=format&fit=crop",
+			Image:     "/images/concerts/symphony-no-5.jpg",
 			AudioURL:  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
 			Conductor: "Maestro Addie MS",
 			OpenGate:  "18:00 WIB",
@@ -430,7 +455,7 @@ func seedInitialData() {
 			Time:      "20:00 WIB",
 			Category:  "BALET & OPERA",
 			BadgeCol:  "bg-purple-900/80 text-purple-200 border-purple-500/40",
-			Image:     "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1000&auto=format&fit=crop",
+			Image:     "/images/concerts/winner-takes-it-all.jpg",
 			AudioURL:  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
 			Conductor: "Maestro Hikotaro Yazaki",
 			OpenGate:  "18:30 WIB",
@@ -459,7 +484,7 @@ func seedInitialData() {
 			Time:      "19:00 WIB",
 			Category:  "RESITAL PIANO",
 			BadgeCol:  "bg-emerald-900/80 text-emerald-200 border-emerald-500/40",
-			Image:     "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?q=80&w=1000&auto=format&fit=crop",
+			Image:     "/images/concerts/piano-recital.jpg",
 			AudioURL:  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
 			Conductor: "-",
 			OpenGate:  "17:30 WIB",

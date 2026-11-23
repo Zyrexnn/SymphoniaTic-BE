@@ -43,6 +43,10 @@ func RequireAdminAuth(allowedRoles ...string) fiber.Handler {
 			})
 		}
 
+		ctx.Locals("admin_id", claims.UserID)
+		ctx.Locals("admin_email", claims.Email)
+		ctx.Locals("admin_role", claims.Role)
+
 		roleAllowed := claims.Role == "SUPER_ADMIN"
 		if !roleAllowed {
 			for _, role := range targetRoles {
@@ -59,10 +63,6 @@ func RequireAdminAuth(allowedRoles ...string) fiber.Handler {
 				Message: "Akses ditolak. Peran pengguna tidak memiliki hak akses yang memadai.",
 			})
 		}
-
-		ctx.Locals("admin_id", claims.UserID)
-		ctx.Locals("admin_email", claims.Email)
-		ctx.Locals("admin_role", claims.Role)
 
 		return ctx.Next()
 	}

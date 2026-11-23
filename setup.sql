@@ -192,12 +192,32 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     target_resource VARCHAR(150) NOT NULL,
     details TEXT DEFAULT '',
     ip_address VARCHAR(45) DEFAULT '',
+    category VARCHAR(30) NOT NULL DEFAULT 'OPERATIONAL',
+    severity VARCHAR(20) NOT NULL DEFAULT 'INFO',
+    status_code INT NOT NULL DEFAULT 200,
+    user_agent TEXT DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_role ON audit_logs(actor_role);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_severity ON audit_logs(severity);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_ip_address ON audit_logs(ip_address);
+
+CREATE TABLE IF NOT EXISTS blocked_ips (
+    id VARCHAR(64) PRIMARY KEY,
+    ip_address VARCHAR(45) NOT NULL,
+    reason TEXT NOT NULL,
+    blocked_by VARCHAR(100) NOT NULL,
+    is_auto BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_blocked_ips_ip_active ON blocked_ips(ip_address, is_active);
 
 INSERT INTO promotions (id, code, description, discount_type, discount_value, min_order_amount, max_discount_amount, is_member_only, is_active, quota, remaining_quota, valid_from, valid_until)
 VALUES
@@ -223,7 +243,7 @@ VALUES
     '18:00 WIB',
     'SIMFONI',
     'bg-amber-500/20 text-amber-300 border-amber-500/40',
-    'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?auto=format&fit=crop&w=1200&q=80',
+    '/images/concerts/symphony-no-5.jpg',
     '/audio/Ludwig van Beethoven - Symphony n.5 in C minor, Op.67, I.Allegro con brio.mp3',
     'Royal Philharmonic Foundation & SymphoniaTic Events',
     'Mahakarya simfoni Ludwig van Beethoven yang sangat terkenal. Menampilkan irama 4 ketukan ikonik Allegro con brio dengan kolaborasi 90 musisi orkestra simfoni profesional.',
@@ -250,7 +270,7 @@ VALUES
     '18:30 WIB',
     'KAMAR MUSIK',
     'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80',
+    '/images/concerts/viva-la-vida.jpg',
     '/audio/coldplay - Viva La Vida I COLDPLAY & OASIS AND BAND MUSIC ORCHESTRA FESTA.mp3',
     'Jakarta Chamber Society & Modern Orchestra',
     'Reinterpretasi megah lagu hit Viva La Vida yang dibawakan oleh gabungan tim orkestra simfoni dan ansambel string modern.',
@@ -276,7 +296,7 @@ VALUES
     '17:30 WIB',
     'BALET & OPERA',
     'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
+    '/images/concerts/winner-takes-it-all.jpg',
     '/audio/ABBA - The Winner Takes It All  Epic Orchestra (2020).mp3',
     'Indonesian Classical Ballet Theatre',
     'Aransemen epik orkestra dari lagu legendaris ABBA ''The Winner Takes It All'' diiringi koreografi tarian balet simfoni kolosal.',
@@ -302,7 +322,7 @@ VALUES
     '17:30 WIB',
     'NUSANTARA SYMPHONY',
     'bg-blue-500/20 text-blue-300 border-blue-500/40',
-    'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=1200&q=80',
+    '/images/concerts/laskar-pelangi.jpg',
     '/audio/Laskar Pelangi  TRUST (Trinity Youth Symphony Orchestra).mp3',
     'TRUST Orchestra & SymphoniaTic Events',
     'Aransemen orkestra simfoni memukau dari lagu kebangsaan legendaris Laskar Pelangi karya Nidji, dibawakan secara megah oleh Trinity Youth Symphony Orchestra.',

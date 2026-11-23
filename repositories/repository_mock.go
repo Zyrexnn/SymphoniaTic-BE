@@ -537,3 +537,46 @@ func (m *MockAdminUserRepository) GetAuditLogs(ctx context.Context, actionFilter
 	}
 	return []models.AuditLog{}, nil
 }
+
+type MockSecurityRepository struct {
+	GetAuditLogsFilteredFunc func(ctx context.Context, filter models.AuditLogFilter) (*models.AuditLogPage, error)
+	IsIPBlockedFunc          func(ctx context.Context, ip string) (*models.BlockedIP, error)
+	BlockIPFunc              func(ctx context.Context, entry *models.BlockedIP) (*models.BlockedIP, error)
+	UnblockIPFunc            func(ctx context.Context, idOrIP string) error
+	ListBlockedIPsFunc       func(ctx context.Context, activeOnly bool) ([]models.BlockedIP, error)
+}
+
+func (m *MockSecurityRepository) GetAuditLogsFiltered(ctx context.Context, filter models.AuditLogFilter) (*models.AuditLogPage, error) {
+	if m.GetAuditLogsFilteredFunc != nil {
+		return m.GetAuditLogsFilteredFunc(ctx, filter)
+	}
+	return &models.AuditLogPage{Items: []models.AuditLog{}, Total: 0, Page: 1, Limit: 50}, nil
+}
+
+func (m *MockSecurityRepository) IsIPBlocked(ctx context.Context, ip string) (*models.BlockedIP, error) {
+	if m.IsIPBlockedFunc != nil {
+		return m.IsIPBlockedFunc(ctx, ip)
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockSecurityRepository) BlockIP(ctx context.Context, entry *models.BlockedIP) (*models.BlockedIP, error) {
+	if m.BlockIPFunc != nil {
+		return m.BlockIPFunc(ctx, entry)
+	}
+	return entry, nil
+}
+
+func (m *MockSecurityRepository) UnblockIP(ctx context.Context, idOrIP string) error {
+	if m.UnblockIPFunc != nil {
+		return m.UnblockIPFunc(ctx, idOrIP)
+	}
+	return nil
+}
+
+func (m *MockSecurityRepository) ListBlockedIPs(ctx context.Context, activeOnly bool) ([]models.BlockedIP, error) {
+	if m.ListBlockedIPsFunc != nil {
+		return m.ListBlockedIPsFunc(ctx, activeOnly)
+	}
+	return []models.BlockedIP{}, nil
+}

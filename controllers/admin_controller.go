@@ -169,6 +169,10 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 			TargetResource: "auth:" + cleanUsername,
 			Details:        fmt.Sprintf("Login portal operasional sebagai %s", authenticatedRole),
 			IPAddress:      ctx.IP(),
+			Category:       "AUTH",
+			Severity:       "INFO",
+			StatusCode:     fiber.StatusOK,
+			UserAgent:      ctx.Get("User-Agent"),
 		})
 	}
 

@@ -233,11 +233,23 @@ func (r *adminUserRepository) CreateAuditLog(ctx context.Context, logEntry *mode
 	if now.IsZero() {
 		now = time.Now()
 	}
+	category := strings.ToUpper(strings.TrimSpace(logEntry.Category))
+	if category == "" {
+		category = "OPERATIONAL"
+	}
+	severity := strings.ToUpper(strings.TrimSpace(logEntry.Severity))
+	if severity == "" {
+		severity = "INFO"
+	}
+	statusCode := logEntry.StatusCode
+	if statusCode <= 0 {
+		statusCode = 200
+	}
 
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO audit_logs (id, actor_id, actor_name, actor_role, action, target_resource, details, ip_address, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, id, logEntry.ActorID, logEntry.ActorName, logEntry.ActorRole, logEntry.Action, logEntry.TargetResource, logEntry.Details, logEntry.IPAddress, now)
+		INSERT INTO audit_logs (id, actor_id, actor_name, actor_role, action, target_resource, details, ip_address, category, severity, status_code, user_agent, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, id, logEntry.ActorID, logEntry.ActorName, logEntry.ActorRole, logEntry.Action, logEntry.TargetResource, logEntry.Details, logEntry.IPAddress, category, severity, statusCode, logEntry.UserAgent, now)
 	if err != nil {
 		return fmt.Errorf("gagal mencatat audit log: %w", err)
 	}

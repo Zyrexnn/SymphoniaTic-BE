@@ -130,3 +130,11 @@ type AdminUserRepository interface {
 	CreateAuditLog(ctx context.Context, logEntry *models.AuditLog) error
 	GetAuditLogs(ctx context.Context, actionFilter, search string, limit int) ([]models.AuditLog, error)
 }
+
+type SecurityRepository interface {
+	GetAuditLogsFiltered(ctx context.Context, filter models.AuditLogFilter) (*models.AuditLogPage, error)
+	IsIPBlocked(ctx context.Context, ip string) (*models.BlockedIP, error)
+	BlockIP(ctx context.Context, entry *models.BlockedIP) (*models.BlockedIP, error)
+	UnblockIP(ctx context.Context, idOrIP string) error
+	ListBlockedIPs(ctx context.Context, activeOnly bool) ([]models.BlockedIP, error)
+}

@@ -527,6 +527,10 @@ func AuditTrailMiddleware(staffRepo repositories.AdminUserRepository) fiber.Hand
 					TargetResource: resourceKind + ":" + path,
 					Details:        fmt.Sprintf("%s %s (HTTP %d)", method, path, ctx.Response().StatusCode()),
 					IPAddress:      ctx.IP(),
+					Category:       "OPERATIONAL",
+					Severity:       "INFO",
+					StatusCode:     ctx.Response().StatusCode(),
+					UserAgent:      ctx.Get("User-Agent"),
 				})
 			}
 		}

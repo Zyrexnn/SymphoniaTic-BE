@@ -258,11 +258,20 @@ func TestE2ESuperAdminStaffAndAuditFlow(t *testing.T) {
 
 	orderRepo := repositories.NewOrderRepository(database.DB)
 	staffRepo := repositories.NewAdminUserRepository(database.DB)
+	secRepo := repositories.NewSecurityRepository(database.DB)
+	blockMgr := middleware.NewIPBlocklistManager(secRepo, staffRepo)
 	adminCtrl := controllers.NewAdminControllerWithStaffRepo(orderRepo, staffRepo, &cfg.Auth)
 	staffCtrl := controllers.NewStaffController(staffRepo)
+	securityCtrl := controllers.NewSecurityController(secRepo, staffRepo, blockMgr)
+
+	t.Setenv("APP_ENV", "development")
 
 	app := fiber.New()
-	admin := app.Group("/api/v1/admin")
+	api := app.Group("/api/v1")
+	api.Use(blockMgr.BlocklistMiddleware())
+	api.Use(blockMgr.SecurityAuditMiddleware())
+
+	admin := api.Group("/admin")
 	admin.Post("/login", adminCtrl.AdminLogin)
 
 	guardSuper := middleware.RequireAdminAuth("SUPER_ADMIN")
@@ -273,6 +282,10 @@ func TestE2ESuperAdminStaffAndAuditFlow(t *testing.T) {
 	admin.Post("/staff/:id/reset-password", guardSuper, staffCtrl.ResetStaffPassword)
 	admin.Delete("/staff/:id", guardSuper, staffCtrl.DeleteStaff)
 	admin.Get("/audit-logs", guardSuper, staffCtrl.GetAuditLogs)
+	admin.Get("/audit-logs/search", guardSuper, securityCtrl.GetFilteredAuditLogs)
+	admin.Get("/security/blocked-ips", guardSuper, securityCtrl.ListBlockedIPs)
+	admin.Post("/security/blocked-ips", guardSuper, securityCtrl.BlockIP)
+	admin.Delete("/security/blocked-ips/:id", guardSuper, securityCtrl.UnblockIP)
 
 	// 1. Login sebagai SUPER_ADMIN seeded
 	loginSuperBody, _ := json.Marshal(models.AdminLoginRequest{Username: "superadmin", Password: "123"})
@@ -398,5 +411,52 @@ func TestE2ESuperAdminStaffAndAuditFlow(t *testing.T) {
 	logsSlice := logsResp.Data.([]interface{})
 	if len(logsSlice) < 4 {
 		t.Fatalf("Ekspektasi minimal 4 entri audit log untuk siklus hidup staf, dapat %d", len(logsSlice))
+	}
+
+	// 9. Simulasi probe keamanan dari IP eksternal -> verifikasi tercatat & bisa diblokir lalu dibuka kembali
+	attackerIP := "203.0.113.88"
+	reqProbe := httptest.NewRequest(http.MethodGet, "/api/v1/admin/.env", nil)
+	reqProbe.Header.Set("X-Test-Client-IP", attackerIP)
+	_, _ = app.Test(reqProbe, -1)
+
+	reqSecSearch := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs/search?category=SECURITY&ip="+attackerIP, nil)
+	reqSecSearch.Header.Set("Authorization", "Bearer "+superToken)
+	respSecSearch, err := app.Test(reqSecSearch, -1)
+	if err != nil || respSecSearch.StatusCode != http.StatusOK {
+		t.Fatalf("GetFilteredAuditLogs gagal: status=%v err=%v", respSecSearch, err)
+	}
+	var secSearchResp models.APIResponse
+	_ = json.NewDecoder(respSecSearch.Body).Decode(&secSearchResp)
+	secPage := secSearchResp.Data.(map[string]interface{})
+	if secPage["total"].(float64) < 1 {
+		t.Fatalf("Ekspektasi minimal 1 audit log SECURITY untuk IP %s, dapat %v", attackerIP, secPage["total"])
+	}
+
+	blockBody, _ := json.Marshal(models.BlockIPRequest{
+		IPAddress:       attackerIP,
+		Reason:          "E2E test security probe",
+		DurationMinutes: 15,
+	})
+	reqBlock := httptest.NewRequest(http.MethodPost, "/api/v1/admin/security/blocked-ips", bytes.NewReader(blockBody))
+	reqBlock.Header.Set("Authorization", "Bearer "+superToken)
+	reqBlock.Header.Set("Content-Type", "application/json")
+	respBlock, err := app.Test(reqBlock, -1)
+	if err != nil || respBlock.StatusCode != http.StatusCreated {
+		t.Fatalf("BlockIP gagal: status=%v err=%v", respBlock, err)
+	}
+
+	reqBlockedAttempt := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", bytes.NewReader(loginSuperBody))
+	reqBlockedAttempt.Header.Set("X-Test-Client-IP", attackerIP)
+	reqBlockedAttempt.Header.Set("Content-Type", "application/json")
+	respBlockedAttempt, _ := app.Test(reqBlockedAttempt, -1)
+	if respBlockedAttempt.StatusCode != http.StatusForbidden {
+		t.Fatalf("IP yang diblokir harus ditolak 403, dapat: %d", respBlockedAttempt.StatusCode)
+	}
+
+	reqUnblock := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/security/blocked-ips/"+attackerIP, nil)
+	reqUnblock.Header.Set("Authorization", "Bearer "+superToken)
+	respUnblock, err := app.Test(reqUnblock, -1)
+	if err != nil || respUnblock.StatusCode != http.StatusOK {
+		t.Fatalf("UnblockIP gagal: status=%v err=%v", respUnblock, err)
 	}
 }

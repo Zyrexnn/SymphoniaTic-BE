@@ -173,7 +173,48 @@ type AuditLog struct {
 	TargetResource string    `json:"targetResource"`
 	Details        string    `json:"details"`
 	IPAddress      string    `json:"ipAddress"`
+	Category       string    `json:"category"`
+	Severity       string    `json:"severity"`
+	StatusCode     int       `json:"statusCode"`
+	UserAgent      string    `json:"userAgent"`
 	CreatedAt      time.Time `json:"createdAt"`
+}
+
+type AuditLogFilter struct {
+	Action    string
+	Category  string
+	Severity  string
+	ActorRole string
+	IPAddress string
+	Search    string
+	From      *time.Time
+	To        *time.Time
+	Page      int
+	Limit     int
+}
+
+type AuditLogPage struct {
+	Items []AuditLog `json:"items"`
+	Total int        `json:"total"`
+	Page  int        `json:"page"`
+	Limit int        `json:"limit"`
+}
+
+type BlockedIP struct {
+	ID        string     `json:"id"`
+	IPAddress string     `json:"ipAddress"`
+	Reason    string     `json:"reason"`
+	BlockedBy string     `json:"blockedBy"`
+	IsAuto    bool       `json:"isAuto"`
+	IsActive  bool       `json:"isActive"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+}
+
+type BlockIPRequest struct {
+	IPAddress       string `json:"ipAddress"`
+	Reason          string `json:"reason"`
+	DurationMinutes int    `json:"durationMinutes"`
 }
 
 type CreateCategoryInput struct {

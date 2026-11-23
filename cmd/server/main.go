@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -79,6 +80,7 @@ func setupRouterWithStaff(
 	refundRepo repositories.RefundRepository,
 	promoRepo repositories.PromoRepository,
 	staffRepo repositories.AdminUserRepository,
+	secRepo ...repositories.SecurityRepository,
 ) *fiber.App {
 	eventCtrl := controllers.NewEventController(eventRepo)
 	categoryCtrl := controllers.NewCategoryController(eventRepo)
@@ -92,6 +94,18 @@ func setupRouterWithStaff(
 		activePromoRepo = &repositories.MockPromoRepository{}
 	}
 	promoCtrl := controllers.NewPromoController(activePromoRepo)
+
+	var activeSecRepo repositories.SecurityRepository = &repositories.MockSecurityRepository{}
+	if len(secRepo) > 0 && secRepo[0] != nil {
+		activeSecRepo = secRepo[0]
+	}
+	blockMgr := middleware.NewIPBlocklistManager(activeSecRepo, staffRepo)
+	if len(secRepo) > 0 && secRepo[0] != nil {
+		if err := blockMgr.RefreshFromDB(context.Background()); err != nil {
+			log.Printf("Peringatan: gagal memuat daftar blokir IP awal: %v", err)
+		}
+	}
+	securityCtrl := controllers.NewSecurityController(activeSecRepo, staffRepo, blockMgr)
 
 	app := fiber.New(fiber.Config{
 		AppName: "SymphoniaTic Native Golang REST API Server",
@@ -117,6 +131,8 @@ func setupRouterWithStaff(
 	app.Get("/swagger/*", swagger.HandlerDefault)
 
 	api := app.Group("/api/v1")
+	api.Use(blockMgr.BlocklistMiddleware())
+	api.Use(blockMgr.SecurityAuditMiddleware())
 
 	authRateLimiter := newRateLimiter(10, 1*time.Minute)
 	lookupRateLimiter := newRateLimiter(30, 1*time.Minute)
@@ -174,6 +190,10 @@ func setupRouterWithStaff(
 	admin.Post("/staff/:id/reset-password", requireSuperAdminOnly, staffCtrl.ResetStaffPassword)
 	admin.Delete("/staff/:id", requireSuperAdminOnly, staffCtrl.DeleteStaff)
 	admin.Get("/audit-logs", requireSuperAdminOnly, staffCtrl.GetAuditLogs)
+	admin.Get("/audit-logs/search", requireSuperAdminOnly, securityCtrl.GetFilteredAuditLogs)
+	admin.Get("/security/blocked-ips", requireSuperAdminOnly, securityCtrl.ListBlockedIPs)
+	admin.Post("/security/blocked-ips", requireSuperAdminOnly, securityCtrl.BlockIP)
+	admin.Delete("/security/blocked-ips/:id", requireSuperAdminOnly, securityCtrl.UnblockIP)
 
 	admin.Get("/dashboard", requireAdminOnly, adminCtrl.GetAdminDashboardMetrics)
 	admin.Post("/upload", requireAdminOnly, adminCtrl.UploadImage)
@@ -229,10 +249,11 @@ func main() {
 	refundRepo := repositories.NewRefundRepository(database.DB)
 	promoRepo := repositories.NewPromoRepository(database.DB)
 	staffRepo := repositories.NewAdminUserRepository(database.DB)
+	secRepo := repositories.NewSecurityRepository(database.DB)
 
 	controllers.InitDefaultControllers(database.DB, &cfg.Auth)
 
-	app := setupRouterWithStaff(cfg, eventRepo, orderRepo, refundRepo, promoRepo, staffRepo)
+	app := setupRouterWithStaff(cfg, eventRepo, orderRepo, refundRepo, promoRepo, staffRepo, secRepo)
 
 	serverShutdown := make(chan struct{})
 	go func() {
