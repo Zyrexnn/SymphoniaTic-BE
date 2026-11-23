@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS orders (
     category_name VARCHAR(100) NOT NULL,
     quantity INT NOT NULL,
     total_price NUMERIC(12, 2) NOT NULL,
+    promo_code VARCHAR(50) DEFAULT '',
+    discount_amount NUMERIC(12, 2) DEFAULT 0,
     user_name VARCHAR(255) NOT NULL,
     user_email VARCHAR(255) NOT NULL,
     qr_code VARCHAR(255) NOT NULL,
@@ -136,6 +138,41 @@ CREATE TABLE IF NOT EXISTS auth_otps (
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_auth_otps_email_purpose ON auth_otps(email, purpose);
+
+CREATE TABLE IF NOT EXISTS promotions (
+    id VARCHAR(64) PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    description TEXT DEFAULT '',
+    discount_type VARCHAR(20) NOT NULL,
+    discount_value NUMERIC(12, 2) NOT NULL,
+    min_order_amount NUMERIC(12, 2) DEFAULT 0,
+    max_discount_amount NUMERIC(12, 2) DEFAULT 0,
+    is_member_only BOOLEAN DEFAULT TRUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    quota INT DEFAULT 100,
+    remaining_quota INT DEFAULT 100,
+    valid_from TIMESTAMP WITH TIME ZONE NOT NULL,
+    valid_until TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_promo_usages (
+    id VARCHAR(64) PRIMARY KEY,
+    promotion_id VARCHAR(64) NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+    user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    order_id VARCHAR(64) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    used_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_promo UNIQUE (promotion_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_promotions_code_upper ON promotions(UPPER(code));
+CREATE INDEX IF NOT EXISTS idx_user_promo_usages_user ON user_promo_usages(user_id);
+
+INSERT INTO promotions (id, code, description, discount_type, discount_value, min_order_amount, max_discount_amount, is_member_only, is_active, quota, remaining_quota, valid_from, valid_until)
+VALUES
+    ('promo-symphonia-10', 'SYMPHONIA10', 'Diskon Anggota 10% (maksimal potongan Rp 50.000)', 'PERCENTAGE', 10, 100000, 50000, TRUE, TRUE, 500, 500, NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days'),
+    ('promo-harmony-50k', 'HARMONY50K', 'Potongan Anggota Rp 50.000 untuk transaksi minimal Rp 200.000', 'FIXED', 50000, 200000, 50000, TRUE, TRUE, 300, 300, NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days')
+ON CONFLICT (code) DO NOTHING;
 
 -- 3. RESET & DATA SEEDING
 TRUNCATE TABLE orders, ticket_categories, events, refund_requests, auth_otps CASCADE;

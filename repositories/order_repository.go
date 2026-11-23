@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -209,16 +210,93 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	seatNumbersStr := strings.Join(assignedSeatCodes, ", ")
 	resolvedAttendees := models.ResolveAttendeeNames(req.AttendeeNames, req.UserName, req.Quantity)
 	attendeeNamesJSON := models.EncodeAttendeeNames(resolvedAttendees)
-	totalPrice := price * float64(req.Quantity)
+	subtotal := price * float64(req.Quantity)
 	dateFull := fmt.Sprintf("%s @ %s", evtDate, evtTime)
 	now := time.Now()
 
+	var appliedPromoID, appliedPromoCode string
+	var discountAmount float64
+	cleanPromoCode := strings.ToUpper(strings.TrimSpace(req.PromoCode))
+	if cleanPromoCode != "" {
+		var promo models.Promotion
+		err = tx.QueryRowContext(ctx, `
+			SELECT id, code, discount_type, discount_value, COALESCE(min_order_amount, 0),
+			       COALESCE(max_discount_amount, 0), is_member_only, COALESCE(is_active, TRUE), remaining_quota, valid_from, valid_until
+			FROM promotions
+			WHERE UPPER(code) = $1
+			FOR UPDATE
+		`, cleanPromoCode).Scan(
+			&promo.ID, &promo.Code, &promo.DiscountType, &promo.DiscountVal, &promo.MinOrderAmount,
+			&promo.MaxDiscount, &promo.IsMemberOnly, &promo.IsActive, &promo.RemainingQuota, &promo.ValidFrom, &promo.ValidUntil,
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, ErrPromoInvalid
+			}
+			return nil, fmt.Errorf("gagal memverifikasi kode promo: %w", err)
+		}
+		if !promo.IsActive {
+			return nil, ErrPromoInactive
+		}
+		if promo.IsMemberOnly && authenticatedUserID == "" {
+			return nil, ErrPromoMemberOnly
+		}
+		if now.Before(promo.ValidFrom) || now.After(promo.ValidUntil) {
+			return nil, ErrPromoExpired
+		}
+		if promo.RemainingQuota <= 0 {
+			return nil, ErrPromoQuotaExceeded
+		}
+		if subtotal < promo.MinOrderAmount {
+			return nil, fmt.Errorf("%w (minimal Rp %.0f)", ErrPromoMinOrderNotMet, promo.MinOrderAmount)
+		}
+
+		if authenticatedUserID != "" {
+			var alreadyUsed bool
+			if err := tx.QueryRowContext(ctx, `
+				SELECT EXISTS(SELECT 1 FROM user_promo_usages WHERE promotion_id = $1 AND user_id = $2)
+			`, promo.ID, authenticatedUserID).Scan(&alreadyUsed); err != nil {
+				return nil, fmt.Errorf("gagal memeriksa riwayat pemakaian promo: %w", err)
+			}
+			if alreadyUsed {
+				return nil, ErrPromoAlreadyUsed
+			}
+		}
+
+		discountAmount = promo.CalculateDiscount(subtotal)
+		appliedPromoID = promo.ID
+		appliedPromoCode = promo.Code
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE promotions SET remaining_quota = remaining_quota - 1 WHERE id = $1
+		`, promo.ID); err != nil {
+			return nil, fmt.Errorf("gagal memperbarui kuota promo: %w", err)
+		}
+	}
+
+	totalPrice := math.Max(0, subtotal-discountAmount)
+
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, user_name, user_email, qr_code, seat_numbers, attendee_names, checked_in_seats, status, payment_method, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, '', 'ISSUED', 'SANDBOX_PAYMENT', $17)
-	`, orderID, orderCode, authenticatedUserID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, req.UserName, req.UserEmail, qrCode, seatNumbersStr, attendeeNamesJSON, now)
+		INSERT INTO orders (id, order_code, user_id, event_id, event_title, artist, venue, date, category_name, quantity, total_price, promo_code, discount_amount, user_name, user_email, qr_code, seat_numbers, attendee_names, checked_in_seats, status, payment_method, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, '', 'ISSUED', 'SANDBOX_PAYMENT', $19)
+	`, orderID, orderCode, authenticatedUserID, eventID, evtTitle, evtArtist, evtVenue, dateFull, catName, req.Quantity, totalPrice, appliedPromoCode, discountAmount, req.UserName, req.UserEmail, qrCode, seatNumbersStr, attendeeNamesJSON, now)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membuat data pesanan tiket: %w", err)
+	}
+
+	if appliedPromoID != "" && authenticatedUserID != "" {
+		usageID := "upu-" + uuid.New().String()
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO user_promo_usages (id, promotion_id, user_id, order_id)
+			VALUES ($1, $2, $3, $4)
+		`, usageID, appliedPromoID, authenticatedUserID, orderID)
+		if err != nil {
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+				return nil, ErrPromoAlreadyUsed
+			}
+			return nil, fmt.Errorf("gagal mencatat pemakaian kode promo: %w", err)
+		}
 	}
 
 	if len(assignedSeatIDs) > 0 {
@@ -237,28 +315,30 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 	}
 
 	orderRecord := &models.OrderRecord{
-		ID:            orderID,
-		OrderCode:     orderCode,
-		UserID:        authenticatedUserID,
-		EventID:       eventID,
-		EventTitle:    evtTitle,
-		Artist:        evtArtist,
-		Venue:         evtVenue,
-		Date:          dateFull,
-		OpenGate:      evtOpenGate,
-		EventTime:     evtTime,
-		VenueAddress:  evtAddress,
-		CategoryName:  catName,
-		Quantity:      req.Quantity,
-		TotalPrice:    totalPrice,
-		UserName:      req.UserName,
-		UserEmail:     req.UserEmail,
-		QRCode:        qrCode,
-		SeatNumbers:   seatNumbersStr,
-		AttendeeNames: attendeeNamesJSON,
-		Status:        "ISSUED",
-		PaymentMethod: "SANDBOX_PAYMENT",
-		CreatedAt:     now,
+		ID:             orderID,
+		OrderCode:      orderCode,
+		UserID:         authenticatedUserID,
+		EventID:        eventID,
+		EventTitle:     evtTitle,
+		Artist:         evtArtist,
+		Venue:          evtVenue,
+		Date:           dateFull,
+		OpenGate:       evtOpenGate,
+		EventTime:      evtTime,
+		VenueAddress:   evtAddress,
+		CategoryName:   catName,
+		Quantity:       req.Quantity,
+		TotalPrice:     totalPrice,
+		PromoCode:      appliedPromoCode,
+		DiscountAmount: discountAmount,
+		UserName:       req.UserName,
+		UserEmail:      req.UserEmail,
+		QRCode:         qrCode,
+		SeatNumbers:    seatNumbersStr,
+		AttendeeNames:  attendeeNamesJSON,
+		Status:         "ISSUED",
+		PaymentMethod:  "SANDBOX_PAYMENT",
+		CreatedAt:      now,
 	}
 	models.BuildOrderTickets(orderRecord)
 	return orderRecord, nil
@@ -267,7 +347,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 const orderWithEventSelect = `
 	SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 	       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-	       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
+	       o.category_name, o.quantity, o.total_price, COALESCE(o.promo_code, ''), COALESCE(o.discount_amount, 0), o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 	       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
 	       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 	FROM orders o
@@ -283,7 +363,7 @@ func scanOrderWithEvent(scanner rowScanner) (models.OrderRecord, error) {
 	err := scanner.Scan(
 		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date, &record.OpenGate, &record.EventTime, &record.VenueAddress,
-		&record.CategoryName, &record.Quantity, &record.TotalPrice, &record.UserName, &record.UserEmail,
+		&record.CategoryName, &record.Quantity, &record.TotalPrice, &record.PromoCode, &record.DiscountAmount, &record.UserName, &record.UserEmail,
 		&record.QRCode, &record.SeatNumbers, &record.AttendeeNames, &record.CheckedInSeats, &record.Status,
 		&record.PaymentMethod, &record.CreatedAt,
 	)

@@ -63,13 +63,19 @@ func setupRouter(
 	eventRepo repositories.EventRepository,
 	orderRepo repositories.OrderRepository,
 	refundRepo repositories.RefundRepository,
+	promoRepo ...repositories.PromoRepository,
 ) *fiber.App {
 	eventCtrl := controllers.NewEventController(eventRepo)
 	categoryCtrl := controllers.NewCategoryController(eventRepo)
 	orderCtrl := controllers.NewOrderController(orderRepo)
 	ticketCtrl := controllers.NewTicketController(orderRepo)
-	refundCtrl := controllers.NewRefundController(refundRepo)
+	refundCtrl := controllers.NewRefundControllerWithOrderRepo(refundRepo, orderRepo)
 	adminCtrl := controllers.NewAdminController(orderRepo, &cfg.Auth)
+	var activePromoRepo repositories.PromoRepository = &repositories.MockPromoRepository{}
+	if len(promoRepo) > 0 && promoRepo[0] != nil {
+		activePromoRepo = promoRepo[0]
+	}
+	promoCtrl := controllers.NewPromoController(activePromoRepo)
 
 	app := fiber.New(fiber.Config{
 		AppName: "SymphoniaTic Native Golang REST API Server",
@@ -105,6 +111,8 @@ func setupRouter(
 	api.Get("/events/:id", eventCtrl.GetEventByID)
 	api.Get("/events/:id/seats", eventCtrl.GetEventSeats)
 	api.Post("/orders", orderRateLimiter, orderCtrl.CreateOrder)
+	api.Get("/promos/active", lookupRateLimiter, promoCtrl.GetActivePromos)
+	api.Post("/promos/validate", lookupRateLimiter, promoCtrl.ValidatePromo)
 	api.Get("/tickets/lookup", lookupRateLimiter, ticketCtrl.LookupTicketByCode)
 
 	// Refund Routes
@@ -128,6 +136,7 @@ func setupRouter(
 	userGroup := api.Group("/user", middleware.RequireUserAuth)
 	userGroup.Get("/orders", controllers.GetUserOrders)
 	userGroup.Get("/orders/:orderCode", controllers.GetUserOrderByCode)
+	userGroup.Post("/orders/:orderCode/refund", refundCtrl.SubmitUserRefund)
 	userGroup.Put("/profile", controllers.UpdateUserProfile)
 	userGroup.Post("/change-password", controllers.ChangeUserPassword)
 	userGroup.Get("/dashboard-summary", controllers.GetUserDashboardSummary)
@@ -160,6 +169,12 @@ func setupRouter(
 	admin.Get("/refunds", requireAdminOnly, refundCtrl.AdminGetAllRefunds)
 	admin.Patch("/refunds/:id/status", requireAdminOnly, refundCtrl.AdminUpdateRefundStatus)
 
+	admin.Get("/promos", requireAdminOnly, promoCtrl.AdminGetAllPromos)
+	admin.Post("/promos", requireAdminOnly, promoCtrl.AdminCreatePromo)
+	admin.Put("/promos/:id", requireAdminOnly, promoCtrl.AdminUpdatePromo)
+	admin.Patch("/promos/:id/toggle-active", requireAdminOnly, promoCtrl.AdminTogglePromoActive)
+	admin.Delete("/promos/:id", requireAdminOnly, promoCtrl.AdminDeletePromo)
+
 	return app
 }
 
@@ -186,10 +201,11 @@ func main() {
 	eventRepo := repositories.NewEventRepository(database.DB)
 	orderRepo := repositories.NewOrderRepository(database.DB)
 	refundRepo := repositories.NewRefundRepository(database.DB)
+	promoRepo := repositories.NewPromoRepository(database.DB)
 
 	controllers.InitDefaultControllers(database.DB, &cfg.Auth)
 
-	app := setupRouter(cfg, eventRepo, orderRepo, refundRepo)
+	app := setupRouter(cfg, eventRepo, orderRepo, refundRepo, promoRepo)
 
 	serverShutdown := make(chan struct{})
 	go func() {

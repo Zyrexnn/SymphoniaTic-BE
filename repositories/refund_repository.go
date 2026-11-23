@@ -404,3 +404,95 @@ func (r *refundRepository) UpdateRefundStatus(ctx context.Context, refundID, new
 		UpdatedAt:    time.Now(),
 	}, nil
 }
+
+func (r *refundRepository) SubmitDirectUserRefund(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memulai transaksi pengajuan refund anggota: %w", err)
+	}
+	defer tx.Rollback()
+
+	var currentOrderStatus string
+	err = tx.QueryRowContext(ctx, `
+		SELECT status FROM orders WHERE id = $1 FOR UPDATE
+	`, order.ID).Scan(&currentOrderStatus)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("gagal memverifikasi status pesanan: %w", err)
+	}
+
+	upperOrderStatus := strings.ToUpper(strings.TrimSpace(currentOrderStatus))
+	if upperOrderStatus == "REFUND_REQUESTED" || upperOrderStatus == "REFUNDED" {
+		return nil, ErrRefundAlreadyExists
+	}
+	if upperOrderStatus != "ISSUED" && upperOrderStatus != "VERIFIED" && upperOrderStatus != "REMINDED" {
+		return nil, ErrTicketInvalid
+	}
+
+	var existingID, existingStatus string
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, status FROM refund_requests WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE
+	`, order.ID).Scan(&existingID, &existingStatus)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("gagal memeriksa pengajuan refund sebelumnya: %w", err)
+	}
+
+	now := time.Now()
+	var refundID string
+	if errors.Is(err, sql.ErrNoRows) {
+		refundID = "rf-" + uuid.New().String()
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO refund_requests (id, order_id, order_code, user_email, bank_name, account_number, account_holder, reason, refund_amount, status, otp_code, otp_expires_at, attempts, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING', NULL, NULL, 0, $10, $10)
+		`, refundID, order.ID, order.OrderCode, order.UserEmail, input.BankName, input.AccountNumber, input.AccountHolder, input.Reason, order.TotalPrice, now)
+		if err != nil {
+			return nil, fmt.Errorf("gagal menyimpan pengajuan refund anggota: %w", err)
+		}
+	} else {
+		upperStatus := strings.ToUpper(strings.TrimSpace(existingStatus))
+		if upperStatus == "PENDING" || upperStatus == "APPROVED" || upperStatus == "COMPLETED" {
+			return nil, ErrRefundAlreadyExists
+		}
+		refundID = existingID
+		_, err = tx.ExecContext(ctx, `
+			UPDATE refund_requests
+			SET bank_name = $1, account_number = $2, account_holder = $3, reason = $4, refund_amount = $5, status = 'PENDING', otp_code = NULL, otp_expires_at = NULL, attempts = 0, updated_at = $6
+			WHERE id = $7
+		`, input.BankName, input.AccountNumber, input.AccountHolder, input.Reason, order.TotalPrice, now, refundID)
+		if err != nil {
+			return nil, fmt.Errorf("gagal memperbarui pengajuan refund anggota: %w", err)
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE orders SET status = 'REFUND_REQUESTED' WHERE id = $1
+	`, order.ID)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memperbarui status pesanan menjadi REFUND_REQUESTED: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("gagal konfirmasi transaksi pengajuan refund anggota: %w", err)
+	}
+
+	return &models.RefundRequestRecord{
+		ID:            refundID,
+		OrderID:       order.ID,
+		OrderCode:     order.OrderCode,
+		UserEmail:     order.UserEmail,
+		BankName:      input.BankName,
+		AccountNumber: input.AccountNumber,
+		AccountHolder: input.AccountHolder,
+		Reason:        input.Reason,
+		RefundAmount:  order.TotalPrice,
+		Status:        "PENDING",
+		EventTitle:    order.EventTitle,
+		CategoryName:  order.CategoryName,
+		Quantity:      order.Quantity,
+		UserName:      order.UserName,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}

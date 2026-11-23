@@ -34,7 +34,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 	baseQuery := `
 		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
+		       o.category_name, o.quantity, o.total_price, COALESCE(o.promo_code, ''), COALESCE(o.discount_amount, 0), o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 		       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 		FROM orders o
@@ -62,7 +62,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 		rowScanErr := orderRows.Scan(
 			&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
 			&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
-			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers,
+			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.PromoCode, &orderRecord.DiscountAmount, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers,
 			&orderRecord.AttendeeNames, &orderRecord.CheckedInSeats, &orderRecord.Status,
 			&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 		)
@@ -100,7 +100,7 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 	err := database.DB.QueryRow(`
 		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
 		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
-		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
+		       o.category_name, o.quantity, o.total_price, COALESCE(o.promo_code, ''), COALESCE(o.discount_amount, 0), o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 		       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at
 		FROM orders o
@@ -109,7 +109,7 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 	`, requestedOrderCode, authenticatedUserID, authenticatedUserEmail).Scan(
 		&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
 		&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
-		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers,
+		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.PromoCode, &orderRecord.DiscountAmount, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers,
 		&orderRecord.AttendeeNames, &orderRecord.CheckedInSeats, &orderRecord.Status,
 		&orderRecord.PaymentMethod, &orderRecord.CreatedAt,
 	)

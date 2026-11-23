@@ -112,6 +112,8 @@ func initSchema() {
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS sales_end_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
 
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) DEFAULT '';
+	ALTER TABLE orders ADD COLUMN IF NOT EXISTS promo_code VARCHAR(50) DEFAULT '';
+	ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12, 2) DEFAULT 0;
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS seat_numbers VARCHAR(255) DEFAULT '';
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS attendee_names TEXT DEFAULT '';
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS checked_in_seats VARCHAR(255) DEFAULT '';
@@ -193,6 +195,37 @@ func initSchema() {
 
 	CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 	CREATE INDEX IF NOT EXISTS idx_auth_otps_email_purpose ON auth_otps(email, purpose);
+
+	CREATE TABLE IF NOT EXISTS promotions (
+		id VARCHAR(64) PRIMARY KEY,
+		code VARCHAR(50) UNIQUE NOT NULL,
+		description TEXT DEFAULT '',
+		discount_type VARCHAR(20) NOT NULL,
+		discount_value NUMERIC(12, 2) NOT NULL,
+		min_order_amount NUMERIC(12, 2) DEFAULT 0,
+		max_discount_amount NUMERIC(12, 2) DEFAULT 0,
+		is_member_only BOOLEAN DEFAULT TRUE,
+		is_active BOOLEAN DEFAULT TRUE,
+		quota INT DEFAULT 100,
+		remaining_quota INT DEFAULT 100,
+		valid_from TIMESTAMP WITH TIME ZONE NOT NULL,
+		valid_until TIMESTAMP WITH TIME ZONE NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	ALTER TABLE promotions ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+	CREATE TABLE IF NOT EXISTS user_promo_usages (
+		id VARCHAR(64) PRIMARY KEY,
+		promotion_id VARCHAR(64) NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+		user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		order_id VARCHAR(64) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+		used_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		CONSTRAINT unique_user_promo UNIQUE (promotion_id, user_id)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_promotions_code_upper ON promotions(UPPER(code));
+	CREATE INDEX IF NOT EXISTS idx_user_promo_usages_user ON user_promo_usages(user_id);
 	`
 
 	_, err := DB.Exec(schemaQuery)
@@ -200,9 +233,23 @@ func initSchema() {
 		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
 	}
 
-	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps) siap")
+	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps, promotions) siap")
 	seedInitialData()
+	ensurePromotionsSeeded()
 	ensureEventSeatsInitialized()
+}
+
+func ensurePromotionsSeeded() {
+	_, err := DB.Exec(`
+		INSERT INTO promotions (id, code, description, discount_type, discount_value, min_order_amount, max_discount_amount, is_member_only, is_active, quota, remaining_quota, valid_from, valid_until)
+		VALUES
+			('promo-symphonia-10', 'SYMPHONIA10', 'Diskon Anggota 10% (maksimal potongan Rp 50.000)', 'PERCENTAGE', 10, 100000, 50000, TRUE, TRUE, 500, 500, NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days'),
+			('promo-harmony-50k', 'HARMONY50K', 'Potongan Anggota Rp 50.000 untuk transaksi minimal Rp 200.000', 'FIXED', 50000, 200000, 50000, TRUE, TRUE, 300, 300, NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days')
+		ON CONFLICT (code) DO NOTHING
+	`)
+	if err != nil {
+		log.Printf("Gagal melakukan seeding promo awal: %v", err)
+	}
 }
 
 func seedInitialData() {

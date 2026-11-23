@@ -27,6 +27,15 @@ var (
 	ErrInvalidSeatSelection   = errors.New("pilihan nomor kursi tidak valid atau tidak sesuai dengan jumlah dan kategori tiket")
 	ErrCategoryHasBookedSeats = errors.New("kategori tidak dapat dihapus karena sudah memiliki kursi yang terjual")
 	ErrQuotaBelowBooked       = errors.New("kuota baru tidak boleh lebih kecil dari jumlah kursi yang sudah terjual")
+	ErrPromoInvalid           = errors.New("kode promo tidak ditemukan atau tidak valid")
+	ErrPromoExpired           = errors.New("kode promo belum berlaku atau sudah kedaluwarsa")
+	ErrPromoQuotaExceeded     = errors.New("kuota penggunaan kode promo sudah habis")
+	ErrPromoMinOrderNotMet    = errors.New("minimal transaksi belum terpenuhi untuk menggunakan kode promo ini")
+	ErrPromoAlreadyUsed       = errors.New("anda sudah pernah menggunakan kode promo ini sebelumnya")
+	ErrPromoMemberOnly        = errors.New("kode promo hanya dapat digunakan oleh pengguna yang telah login")
+	ErrPromoDuplicateCode     = errors.New("kode promo sudah digunakan, silakan pilih kode lain")
+	ErrPromoInactive          = errors.New("kode promo sedang dinonaktifkan")
+	ErrRefundAlreadyExists    = errors.New("pengajuan refund untuk pesanan ini sudah ada")
 )
 
 type ErrOTPWrongCode struct {
@@ -73,9 +82,21 @@ type RefundRepository interface {
 	GetRefundWithOTP(ctx context.Context, orderCode string) (*models.RefundRequestRecord, string, time.Time, error)
 	GetRefundStatus(ctx context.Context, orderCode, userEmail string) (*models.RefundRequestRecord, string, error)
 	SubmitRefund(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error)
+	SubmitDirectUserRefund(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error)
 	GetAllRefunds(ctx context.Context) ([]models.RefundRequestRecord, error)
 	GetUserRefunds(ctx context.Context, userEmail string) ([]models.RefundRequestRecord, error)
 	UpdateRefundStatus(ctx context.Context, refundID, newStatus, adminNote string) (*models.RefundRequestRecord, error)
+}
+
+type PromoRepository interface {
+	GetPromoByCode(ctx context.Context, code string) (*models.Promotion, error)
+	HasUserUsedPromo(ctx context.Context, promotionID, userID string) (bool, error)
+	GetAllPromos(ctx context.Context) ([]models.Promotion, error)
+	GetActivePromos(ctx context.Context) ([]models.Promotion, error)
+	CreatePromo(ctx context.Context, req *models.CreatePromoRequest) (*models.Promotion, error)
+	UpdatePromo(ctx context.Context, id string, req *models.UpdatePromoRequest) (*models.Promotion, error)
+	TogglePromoActive(ctx context.Context, id string) (bool, error)
+	DeletePromo(ctx context.Context, id string) error
 }
 
 type UserRepository interface {

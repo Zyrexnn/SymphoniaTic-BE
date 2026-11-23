@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
+	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
+	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -27,6 +29,9 @@ func setupRefundControllerTest(mockRefundRepo *repositories.MockRefundRepository
 	admin := api.Group("/admin/refunds")
 	admin.Get("", ctrl.AdminGetAllRefunds)
 	admin.Patch("/:id/status", ctrl.AdminUpdateRefundStatus)
+
+	userGroup := api.Group("/user", middleware.RequireUserAuth)
+	userGroup.Post("/orders/:orderCode/refund", ctrl.SubmitUserRefund)
 
 	return app
 }
@@ -633,6 +638,176 @@ func TestRefundController_AdminUpdateRefundStatus(t *testing.T) {
 
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("Status tidak sesuai: ekspektasi 404 Not Found, dapat %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestRefundController_SubmitUserRefund(t *testing.T) {
+	t.Setenv("JWT_SECRET", "symphoniatic-test-jwt-secret-key-min-32")
+
+	memberToken, err := utils.GenerateUserToken("usr-101", "member@example.com", "USER")
+	if err != nil {
+		t.Fatalf("Gagal membuat token member: %v", err)
+	}
+
+	t.Run("Sukses (201 Created) pengajuan refund 1-klik untuk member pemilik pesanan", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:         "ord-101",
+					OrderCode:  "SYM-MEM101",
+					UserID:     "usr-101",
+					UserEmail:  "member@example.com",
+					TotalPrice: 450000,
+					Status:     "ISSUED",
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{
+			SubmitDirectUserRefundFunc: func(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error) {
+				return &models.RefundRequestRecord{
+					ID:           "rf-direct-1",
+					OrderID:      order.ID,
+					OrderCode:    order.OrderCode,
+					UserEmail:    order.UserEmail,
+					BankName:     input.BankName,
+					RefundAmount: order.TotalPrice,
+					Status:       "PENDING",
+				}, nil
+			},
+		}
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+
+		payload := models.SubmitUserRefundInput{
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Anggota Simfoni",
+			Reason:        "Berhalangan hadir karena tugas luar kota",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-MEM101/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (403 Forbidden) jika pesanan milik akun lain", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:        "ord-999",
+					OrderCode: "SYM-OTHER",
+					UserID:    "usr-other",
+					UserEmail: "other@example.com",
+					Status:    "ISSUED",
+				}, nil
+			},
+		}
+		app := setupRefundControllerTest(&repositories.MockRefundRepository{}, mockOrderRepo)
+
+		payload := models.SubmitUserRefundInput{
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Penyerobot",
+			Reason:        "Tes",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-OTHER/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("Ekspektasi 403 Forbidden, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) jika tiket sudah check-in", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:        "ord-checked",
+					OrderCode: "SYM-CHK01",
+					UserID:    "usr-101",
+					UserEmail: "member@example.com",
+					Status:    "CHECKED_IN",
+				}, nil
+			},
+		}
+		app := setupRefundControllerTest(&repositories.MockRefundRepository{}, mockOrderRepo)
+
+		payload := models.SubmitUserRefundInput{
+			BankName:      "Mandiri",
+			AccountNumber: "999888777",
+			AccountHolder: "Anggota",
+			Reason:        "Tes",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-CHK01/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) jika kolom rekening bank kosong", func(t *testing.T) {
+		app := setupRefundControllerTest(&repositories.MockRefundRepository{}, &repositories.MockOrderRepository{})
+
+		payload := models.SubmitUserRefundInput{BankName: "BCA"}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-MEM101/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) jika pengajuan refund sudah pernah diajukan", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:        "ord-101",
+					OrderCode: "SYM-MEM101",
+					UserID:    "usr-101",
+					UserEmail: "member@example.com",
+					Status:    "ISSUED",
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{
+			SubmitDirectUserRefundFunc: func(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error) {
+				return nil, repositories.ErrRefundAlreadyExists
+			},
+		}
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+
+		payload := models.SubmitUserRefundInput{
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Anggota Simfoni",
+			Reason:        "Jadwal bentrok",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-MEM101/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
 }

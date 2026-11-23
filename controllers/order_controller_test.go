@@ -14,6 +14,7 @@ import (
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
+	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -869,6 +870,183 @@ func TestOrderController_CreateOrderSeatErrors(t *testing.T) {
 		}
 		if !receivedBypass {
 			t.Fatalf("Flag bypassOpenGate tidak diteruskan ke repository")
+		}
+	})
+}
+
+func TestOrderController_GuestTicketLimitsAndPromo(t *testing.T) {
+	t.Setenv("JWT_SECRET", "symphoniatic-test-jwt-secret-key-min-32")
+
+	userToken, err := utils.GenerateUserToken("usr-member-1", "member@example.com", "USER")
+	if err != nil {
+		t.Fatalf("Gagal membuat token member: %v", err)
+	}
+
+	t.Run("Gagal (400) ketika guest memesan lebih dari 2 tiket", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{}
+		app := setupOrderControllerTest(mockRepo)
+
+		payload := models.CreateOrderRequest{
+			UserName:         "Tamu Konser",
+			UserEmail:        "tamu@example.com",
+			TicketCategoryID: "cat-1",
+			Quantity:         3,
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request untuk guest > 2 tiket, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400) ketika guest mencoba menggunakan kode promo khusus member", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CreateOrderFunc: func(ctx context.Context, req *models.CreateOrderRequest, authenticatedUserID string) (*models.OrderRecord, error) {
+				if authenticatedUserID == "" && req.PromoCode == "SYMPHONIA10" {
+					return nil, repositories.ErrPromoMemberOnly
+				}
+				return &models.OrderRecord{ID: "ord-unexpected", Status: "ISSUED"}, nil
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+
+		payload := models.CreateOrderRequest{
+			UserName:         "Tamu Promo",
+			UserEmail:        "tamu@example.com",
+			TicketCategoryID: "cat-1",
+			Quantity:         1,
+			PromoCode:        "SYMPHONIA10",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request untuk guest dengan promo khusus member, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Sukses (201) ketika guest memesan maksimal 2 tiket dengan promo publik", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CreateOrderFunc: func(ctx context.Context, req *models.CreateOrderRequest, authenticatedUserID string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:             "ord-guest-pub",
+					OrderCode:      "SYM-PUB01",
+					UserName:       req.UserName,
+					UserEmail:      req.UserEmail,
+					Quantity:       req.Quantity,
+					TotalPrice:     200000,
+					PromoCode:      req.PromoCode,
+					DiscountAmount: 25000,
+					Status:         "ISSUED",
+					CreatedAt:      time.Now(),
+				}, nil
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+
+		payload := models.CreateOrderRequest{
+			UserName:         "Tamu Publik",
+			UserEmail:        "tamu@example.com",
+			TicketCategoryID: "cat-1",
+			Quantity:         2,
+			PromoCode:        "PUBLIK25K",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created untuk guest dengan promo publik, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Sukses (201) ketika member memesan 4 tiket dengan kode promo", func(t *testing.T) {
+		var capturedPromo string
+		mockRepo := &repositories.MockOrderRepository{
+			CreateOrderFunc: func(ctx context.Context, req *models.CreateOrderRequest, authenticatedUserID string) (*models.OrderRecord, error) {
+				capturedPromo = req.PromoCode
+				return &models.OrderRecord{
+					ID:             "ord-member-1",
+					OrderCode:      "SYM-MEM001",
+					UserID:         authenticatedUserID,
+					UserName:       req.UserName,
+					UserEmail:      req.UserEmail,
+					Quantity:       req.Quantity,
+					TotalPrice:     350000,
+					PromoCode:      req.PromoCode,
+					DiscountAmount: 50000,
+					Status:         "ISSUED",
+					CreatedAt:      time.Now(),
+				}, nil
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+
+		payload := models.CreateOrderRequest{
+			UserName:         "Anggota Setia",
+			UserEmail:        "member@example.com",
+			TicketCategoryID: "cat-1",
+			Quantity:         4,
+			PromoCode:        "harmony50k",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+userToken)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created untuk member 4 tiket + promo, dapat %d", resp.StatusCode)
+		}
+		if capturedPromo != "HARMONY50K" {
+			t.Fatalf("Ekspektasi PromoCode ternormalisasi HARMONY50K, dapat %q", capturedPromo)
+		}
+	})
+
+	t.Run("Gagal (400) ketika repository menolak promo yang sudah dipakai atau tidak valid", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CreateOrderFunc: func(ctx context.Context, req *models.CreateOrderRequest, authenticatedUserID string) (*models.OrderRecord, error) {
+				return nil, repositories.ErrPromoAlreadyUsed
+			},
+		}
+		app := setupOrderControllerTest(mockRepo)
+
+		payload := models.CreateOrderRequest{
+			UserName:         "Anggota Setia",
+			UserEmail:        "member@example.com",
+			TicketCategoryID: "cat-1",
+			Quantity:         2,
+			PromoCode:        "SYMPHONIA10",
+		}
+		bodyBytes, _ := json.Marshal(payload)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+userToken)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
 }

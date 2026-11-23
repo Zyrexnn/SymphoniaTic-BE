@@ -84,27 +84,30 @@ type CreateOrderRequest struct {
 	Quantity         int      `json:"quantity"`
 	UserName         string   `json:"userName"`
 	UserEmail        string   `json:"userEmail"`
+	PromoCode        string   `json:"promoCode,omitempty"`
 	SeatNumbers      []string `json:"seatNumbers,omitempty"`
 	AttendeeNames    []string `json:"attendeeNames,omitempty"`
 }
 
 type OrderRecord struct {
-	ID             string       `json:"id"`
-	OrderCode      string       `json:"orderCode"`
-	UserID         string       `json:"userId,omitempty"`
-	EventID        string       `json:"eventId"`
-	EventTitle     string       `json:"eventTitle"`
-	Artist         string       `json:"artist"`
-	Venue          string       `json:"venue"`
-	Date           string       `json:"date"`
-	OpenGate       string       `json:"openGate,omitempty"`
-	EventTime      string       `json:"eventTime,omitempty"`
-	VenueAddress   string       `json:"venueAddress,omitempty"`
-	CategoryName   string       `json:"categoryName"`
-	Quantity       int          `json:"quantity"`
-	TotalPrice     float64      `json:"totalPrice"`
-	UserName       string       `json:"userName"`
-	UserEmail      string       `json:"userEmail"`
+	ID                string       `json:"id"`
+	OrderCode         string       `json:"orderCode"`
+	UserID            string       `json:"userId,omitempty"`
+	EventID           string       `json:"eventId"`
+	EventTitle        string       `json:"eventTitle"`
+	Artist            string       `json:"artist"`
+	Venue             string       `json:"venue"`
+	Date              string       `json:"date"`
+	OpenGate          string       `json:"openGate,omitempty"`
+	EventTime         string       `json:"eventTime,omitempty"`
+	VenueAddress      string       `json:"venueAddress,omitempty"`
+	CategoryName      string       `json:"categoryName"`
+	Quantity          int          `json:"quantity"`
+	TotalPrice        float64      `json:"totalPrice"`
+	PromoCode         string       `json:"promoCode,omitempty"`
+	DiscountAmount    float64      `json:"discountAmount,omitempty"`
+	UserName          string       `json:"userName"`
+	UserEmail         string       `json:"userEmail"`
 	QRCode            string       `json:"qrCode"`
 	SeatNumbers       string       `json:"seatNumbers"`
 	AttendeeNames     string       `json:"attendeeNames,omitempty"`
@@ -113,9 +116,9 @@ type OrderRecord struct {
 	CheckedInSeat     string       `json:"checkedInSeat,omitempty"`
 	CheckedInAttendee string       `json:"checkedInAttendee,omitempty"`
 	Tickets           []TicketItem `json:"tickets,omitempty"`
-	Status         string       `json:"status"`
-	PaymentMethod  string       `json:"paymentMethod"`
-	CreatedAt      time.Time    `json:"createdAt"`
+	Status            string       `json:"status"`
+	PaymentMethod     string       `json:"paymentMethod"`
+	CreatedAt         time.Time    `json:"createdAt"`
 }
 
 type APIResponse struct {
@@ -208,6 +211,83 @@ type SubmitRefundInput struct {
 	AccountNumber string `json:"accountNumber"`
 	AccountHolder string `json:"accountHolder"`
 	Reason        string `json:"reason"`
+}
+
+type SubmitUserRefundInput struct {
+	BankName      string `json:"bankName"`
+	AccountNumber string `json:"accountNumber"`
+	AccountHolder string `json:"accountHolder"`
+	Reason        string `json:"reason"`
+}
+
+type Promotion struct {
+	ID             string    `json:"id"`
+	Code           string    `json:"code"`
+	Description    string    `json:"description"`
+	DiscountType   string    `json:"discountType"`
+	DiscountVal    float64   `json:"discountValue"`
+	MinOrderAmount float64   `json:"minOrderAmount"`
+	MaxDiscount    float64   `json:"maxDiscount"`
+	IsMemberOnly   bool      `json:"isMemberOnly"`
+	IsActive       bool      `json:"isActive"`
+	Quota          int       `json:"quota"`
+	RemainingQuota int       `json:"remainingQuota"`
+	UsedCount      int       `json:"usedCount"`
+	ValidFrom      time.Time `json:"validFrom"`
+	ValidUntil     time.Time `json:"validUntil"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+type CreatePromoRequest struct {
+	Code           string    `json:"code"`
+	Description    string    `json:"description"`
+	DiscountType   string    `json:"discountType"`
+	DiscountVal    float64   `json:"discountValue"`
+	MinOrderAmount float64   `json:"minOrderAmount"`
+	MaxDiscount    float64   `json:"maxDiscount"`
+	IsMemberOnly   bool      `json:"isMemberOnly"`
+	IsActive       bool      `json:"isActive"`
+	Quota          int       `json:"quota"`
+	ValidFrom      time.Time `json:"validFrom"`
+	ValidUntil     time.Time `json:"validUntil"`
+}
+
+type UpdatePromoRequest = CreatePromoRequest
+
+func (p *Promotion) CalculateDiscount(subtotal float64) float64 {
+	if subtotal <= 0 {
+		return 0
+	}
+	var discount float64
+	if strings.EqualFold(p.DiscountType, "PERCENTAGE") {
+		discount = subtotal * (p.DiscountVal / 100.0)
+		if p.MaxDiscount > 0 && discount > p.MaxDiscount {
+			discount = p.MaxDiscount
+		}
+	} else {
+		discount = p.DiscountVal
+	}
+	if discount > subtotal {
+		discount = subtotal
+	}
+	if discount < 0 {
+		return 0
+	}
+	return discount
+}
+
+type ValidatePromoRequest struct {
+	PromoCode string  `json:"promoCode"`
+	Subtotal  float64 `json:"subtotal"`
+}
+
+type ValidatePromoResponse struct {
+	Valid          bool    `json:"valid"`
+	Code           string  `json:"code"`
+	Description    string  `json:"description"`
+	DiscountType   string  `json:"discountType"`
+	DiscountAmount float64 `json:"discountAmount"`
+	FinalTotal     float64 `json:"finalTotal"`
 }
 
 type RefundRequestRecord struct {

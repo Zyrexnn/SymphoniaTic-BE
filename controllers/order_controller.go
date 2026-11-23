@@ -68,6 +68,12 @@ func (c *OrderController) CreateOrder(ctx *fiber.Ctx) error {
 		return utils.ResponseBadRequest(ctx, "Maksimal pemesanan adalah 1 hingga 4 tiket per transaksi")
 	}
 
+	if authenticatedUserID == "" && createOrderReq.Quantity > 2 {
+		return utils.ResponseBadRequest(ctx, "Pembelian tanpa login dibatasi maksimal 2 tiket per transaksi. Silakan masuk untuk memesan hingga 4 tiket.")
+	}
+
+	createOrderReq.PromoCode = strings.ToUpper(strings.TrimSpace(createOrderReq.PromoCode))
+
 	orderRecord, err := c.repo.CreateOrder(ctx.Context(), &createOrderReq, authenticatedUserID)
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
@@ -76,10 +82,15 @@ func (c *OrderController) CreateOrder(ctx *fiber.Ctx) error {
 		if errors.Is(err, repositories.ErrEventClosed) {
 			return utils.ResponseBadRequest(ctx, "Penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai.")
 		}
-		if errors.Is(err, repositories.ErrQuotaExceeded) {
-			return utils.ResponseBadRequest(ctx, err.Error())
-		}
-		if errors.Is(err, repositories.ErrInvalidSeatSelection) {
+		if errors.Is(err, repositories.ErrQuotaExceeded) ||
+			errors.Is(err, repositories.ErrInvalidSeatSelection) ||
+			errors.Is(err, repositories.ErrPromoInvalid) ||
+			errors.Is(err, repositories.ErrPromoInactive) ||
+			errors.Is(err, repositories.ErrPromoExpired) ||
+			errors.Is(err, repositories.ErrPromoQuotaExceeded) ||
+			errors.Is(err, repositories.ErrPromoMinOrderNotMet) ||
+			errors.Is(err, repositories.ErrPromoAlreadyUsed) ||
+			errors.Is(err, repositories.ErrPromoMemberOnly) {
 			return utils.ResponseBadRequest(ctx, err.Error())
 		}
 		if errors.Is(err, repositories.ErrSeatUnavailable) {

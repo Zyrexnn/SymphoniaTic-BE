@@ -82,6 +82,11 @@ func TestRouter_RoleAuthorizationSegregation(t *testing.T) {
 		{http.MethodPatch, "/api/v1/admin/orders/ord-1/status", `{"status":"CANCELLED"}`},
 		{http.MethodGet, "/api/v1/admin/refunds", ""},
 		{http.MethodPatch, "/api/v1/admin/refunds/ref-1/status", `{"status":"APPROVED"}`},
+		{http.MethodGet, "/api/v1/admin/promos", ""},
+		{http.MethodPost, "/api/v1/admin/promos", "{}"},
+		{http.MethodPut, "/api/v1/admin/promos/promo-1", "{}"},
+		{http.MethodPatch, "/api/v1/admin/promos/promo-1/toggle-active", ""},
+		{http.MethodDelete, "/api/v1/admin/promos/promo-1", ""},
 	}
 
 	for _, tc := range adminExclusiveEndpoints {

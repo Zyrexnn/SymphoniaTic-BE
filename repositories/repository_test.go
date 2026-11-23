@@ -427,6 +427,7 @@ func orderStubColumns() []string {
 	return []string{
 		"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
 		"open_gate", "event_time", "venue_address", "category_name", "quantity", "total_price",
+		"promo_code", "discount_amount",
 		"user_name", "user_email", "qr_code", "seat_numbers", "attendee_names", "checked_in_seats",
 		"status", "payment_method", "created_at",
 	}
@@ -436,7 +437,7 @@ func sampleOrderRow(status string) []driver.Value {
 	return []driver.Value{
 		"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 		"22 November 2026 @ 14:21 WIB", "13:21 WIB", "14:21 WIB", "Jl. Industri No. 1",
-		"VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com", "QR-SYM-100001",
+		"VIP Pit", int64(2), float64(1500000), "", float64(0), "Budi", "budi@example.com", "QR-SYM-100001",
 		"A-1, A-2", "", "", status, "SANDBOX_PAYMENT", time.Now(),
 	}
 }
@@ -606,7 +607,7 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 						"ord-3", "SYM-EXPIRED", "usr-1", "evt-1", "Simfoni Kemarin", "Jakarta Orchestra", "Aula Simfonia",
 						pastTime.Format("2006-01-02") + " @ " + pastTime.Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
 						"QR-SYM-EXPIRED", "A-1", "", "", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
-						false, pastTime.Add(-1 * time.Hour).Format("15:04"), pastTime.Format("15:04"), pastTime,
+						false, "", pastTime.Format("15:04"), pastTime,
 					}},
 				}
 			},
@@ -1084,7 +1085,7 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 					rows: [][]driver.Value{{
 						"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 						"22 November 2026 @ 14:21 WIB", "13:21 WIB", "14:21 WIB", "Jl. Industri No. 1",
-						"VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com", "QR-SYM-100001",
+						"VIP Pit", int64(2), float64(1500000), "", float64(0), "Budi", "budi@example.com", "QR-SYM-100001",
 						"A-1, A-2", `["Budi","Siti"]`, "A-1", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
 					}},
 				}

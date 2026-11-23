@@ -37,6 +37,34 @@ func NewRefundControllerWithOrderRepo(repo repositories.RefundRepository, orderR
 	}
 }
 
+func validateOrderRefundEligibility(targetOrder *models.OrderRecord) (int, string) {
+	normalizedOrderStatus := strings.ToUpper(strings.TrimSpace(targetOrder.Status))
+	if normalizedOrderStatus == "CHECKED_IN" || strings.TrimSpace(targetOrder.CheckedInSeats) != "" {
+		return fiber.StatusBadRequest, "Tiket sudah di-scan (Check In) pada venue dan tidak dapat dikembalikan / refund"
+	}
+	if normalizedOrderStatus == "REFUND_REQUESTED" || normalizedOrderStatus == "REFUNDED" {
+		return fiber.StatusBadRequest, "Pengajuan refund untuk tiket ini sedang diproses atau sudah selesai"
+	}
+	if normalizedOrderStatus == "CANCELLED" {
+		return fiber.StatusBadRequest, "Pesanan ini sudah dibatalkan sebelumnya"
+	}
+	if normalizedOrderStatus != "ISSUED" && normalizedOrderStatus != "VERIFIED" && normalizedOrderStatus != "REMINDED" {
+		return fiber.StatusBadRequest, "Status tiket tidak memenuhi syarat untuk pengajuan refund"
+	}
+
+	if concertDt, err := utils.ParseConcertDateTime(targetOrder.Date, targetOrder.EventTime); err == nil && !concertDt.IsZero() {
+		now := time.Now()
+		if now.After(concertDt) {
+			return fiber.StatusBadRequest, "Pengajuan refund tidak dapat dilakukan karena acara konser telah dimulai atau selesai"
+		}
+		if time.Until(concertDt) < 24*time.Hour {
+			return fiber.StatusBadRequest, "Pengajuan refund ditutup maksimal 24 jam sebelum jadwal konser dimulai"
+		}
+	}
+
+	return 0, ""
+}
+
 // RequestRefundOTP godoc
 // @Summary Meminta kode OTP untuk pengajuan refund
 // @Description Meminta kode OTP yang akan dikirimkan ke email pemilik tiket untuk validasi refund.
@@ -100,47 +128,11 @@ func (c *RefundController) RequestRefundOTP(ctx *fiber.Ctx) error {
 		})
 	}
 
-	normalizedOrderStatus := strings.ToUpper(strings.TrimSpace(targetOrder.Status))
-	if normalizedOrderStatus == "CHECKED_IN" || strings.TrimSpace(targetOrder.CheckedInSeats) != "" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+	if errStatus, errMsg := validateOrderRefundEligibility(targetOrder); errStatus != 0 {
+		return ctx.Status(errStatus).JSON(models.APIResponse{
 			Success: false,
-			Message: "Tiket sudah di-scan (Check In) pada venue dan tidak dapat dikembalikan / refund",
+			Message: errMsg,
 		})
-	}
-	if normalizedOrderStatus == "REFUND_REQUESTED" || normalizedOrderStatus == "REFUNDED" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: "Pengajuan refund untuk tiket ini sedang diproses atau sudah selesai",
-		})
-	}
-	if normalizedOrderStatus == "CANCELLED" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: "Pesanan ini sudah dibatalkan sebelumnya",
-		})
-	}
-	if normalizedOrderStatus != "ISSUED" && normalizedOrderStatus != "VERIFIED" && normalizedOrderStatus != "REMINDED" {
-		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-			Success: false,
-			Message: "Status tiket tidak memenuhi syarat untuk pengajuan refund",
-		})
-	}
-
-	// Validasi cut-off waktu refund: ditolak jika konser sudah berlangsung atau kurang dari 24 jam sebelum acara
-	if concertDt, err := utils.ParseConcertDateTime(targetOrder.Date, targetOrder.EventTime); err == nil && !concertDt.IsZero() {
-		now := time.Now()
-		if now.After(concertDt) {
-			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-				Success: false,
-				Message: "Pengajuan refund tidak dapat dilakukan karena acara konser telah dimulai atau selesai",
-			})
-		}
-		if time.Until(concertDt) < 24*time.Hour {
-			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
-				Success: false,
-				Message: "Pengajuan refund ditutup maksimal 24 jam sebelum jadwal konser dimulai",
-			})
-		}
 	}
 
 	otpCode, err := utils.GenerateCryptoOTP()
@@ -398,4 +390,89 @@ func (c *RefundController) AdminUpdateRefundStatus(ctx *fiber.Ctx) error {
 		Success: true,
 		Message: fmt.Sprintf("Status pengajuan refund berhasil diubah menjadi %s", newStatus),
 	})
+}
+
+// SubmitUserRefund godoc
+// @Summary Pengajuan refund langsung 1-klik oleh anggota terautentikasi
+// @Description Memungkinkan pengguna yang telah login mengajukan refund langsung dari dashboard tanpa verifikasi OTP email tambahan.
+// @Tags User Profile
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param orderCode path string true "Order Code"
+// @Param payload body models.SubmitUserRefundInput true "Submit User Refund Payload"
+// @Success 201 {object} models.APIResponse{data=models.RefundRequestRecord} "Pengajuan refund berhasil dikirim"
+// @Failure 400 {object} models.APIResponse "Data tidak lengkap atau tiket tidak memenuhi syarat refund"
+// @Failure 403 {object} models.APIResponse "Pesanan bukan milik akun Anda"
+// @Failure 404 {object} models.APIResponse "Kode pesanan tidak ditemukan"
+// @Router /user/orders/{orderCode}/refund [post]
+func (c *RefundController) SubmitUserRefund(ctx *fiber.Ctx) error {
+	authenticatedUserID, _ := ctx.Locals("user_id").(string)
+	authenticatedUserEmail, _ := ctx.Locals("user_email").(string)
+	if authenticatedUserID == "" && authenticatedUserEmail == "" {
+		return utils.ResponseUnauthorized(ctx, "Sesi login tidak valid")
+	}
+
+	orderCode := strings.TrimSpace(ctx.Params("orderCode"))
+	if orderCode == "" {
+		return utils.ResponseBadRequest(ctx, "Kode pesanan wajib diisi")
+	}
+
+	var input models.SubmitUserRefundInput
+	if err := ctx.BodyParser(&input); err != nil {
+		return utils.ResponseBadRequest(ctx, "Format data request tidak valid")
+	}
+
+	input.BankName = strings.TrimSpace(input.BankName)
+	input.AccountNumber = strings.TrimSpace(input.AccountNumber)
+	input.AccountHolder = strings.TrimSpace(input.AccountHolder)
+	input.Reason = strings.TrimSpace(input.Reason)
+
+	if input.BankName == "" || input.AccountNumber == "" || input.AccountHolder == "" {
+		return utils.ResponseBadRequest(ctx, "Nama bank, nomor rekening, dan nama pemilik rekening wajib diisi")
+	}
+
+	if c.orderRepo == nil && database.DB != nil {
+		c.orderRepo = repositories.NewOrderRepository(database.DB)
+	}
+	if c.orderRepo == nil {
+		return utils.ResponseInternalError(ctx, "Layanan verifikasi pesanan tidak tersedia", nil)
+	}
+
+	targetOrder, err := c.orderRepo.GetOrderByCode(ctx.Context(), orderCode)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return utils.ResponseNotFound(ctx, "Kode pesanan tidak ditemukan")
+		}
+		return utils.ResponseInternalError(ctx, "Gagal memeriksa data pesanan", err)
+	}
+
+	isOwner := (authenticatedUserID != "" && targetOrder.UserID == authenticatedUserID) ||
+		(authenticatedUserEmail != "" && strings.EqualFold(targetOrder.UserEmail, authenticatedUserEmail))
+	if !isOwner {
+		return ctx.Status(fiber.StatusForbidden).JSON(models.APIResponse{
+			Success: false,
+			Message: "Anda tidak memiliki izin untuk mengajukan refund atas pesanan ini",
+		})
+	}
+
+	if errStatus, errMsg := validateOrderRefundEligibility(targetOrder); errStatus != 0 {
+		return ctx.Status(errStatus).JSON(models.APIResponse{
+			Success: false,
+			Message: errMsg,
+		})
+	}
+
+	refundRecord, err := c.repo.SubmitDirectUserRefund(ctx.Context(), targetOrder, &input)
+	if err != nil {
+		if errors.Is(err, repositories.ErrRefundAlreadyExists) || errors.Is(err, repositories.ErrTicketInvalid) {
+			return utils.ResponseBadRequest(ctx, err.Error())
+		}
+		if errors.Is(err, repositories.ErrNotFound) {
+			return utils.ResponseNotFound(ctx, "Data pesanan tidak ditemukan")
+		}
+		return utils.ResponseInternalError(ctx, "Gagal menyimpan pengajuan refund", err)
+	}
+
+	return utils.ResponseCreated(ctx, "Pengajuan refund berhasil dikirim tanpa OTP tambahan. Tim kami akan memproses pengembalian dana Anda.", refundRecord)
 }

@@ -12,6 +12,7 @@ var (
 	_ OrderRepository  = (*MockOrderRepository)(nil)
 	_ RefundRepository = (*MockRefundRepository)(nil)
 	_ UserRepository   = (*MockUserRepository)(nil)
+	_ PromoRepository  = (*MockPromoRepository)(nil)
 )
 
 type MockEventRepository struct {
@@ -213,14 +214,15 @@ func (m *MockOrderRepository) GetUserDashboardSummary(ctx context.Context, userI
 }
 
 type MockRefundRepository struct {
-	RequestRefundOTPFunc   func(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error
-	GetRefundByOrderCodeFunc func(ctx context.Context, orderCode string) (*models.RefundRequestRecord, error)
-	GetRefundWithOTPFunc   func(ctx context.Context, orderCode string) (*models.RefundRequestRecord, string, time.Time, error)
-	GetRefundStatusFunc    func(ctx context.Context, orderCode, userEmail string) (*models.RefundRequestRecord, string, error)
-	SubmitRefundFunc       func(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error)
-	GetAllRefundsFunc      func(ctx context.Context) ([]models.RefundRequestRecord, error)
-	GetUserRefundsFunc     func(ctx context.Context, userEmail string) ([]models.RefundRequestRecord, error)
-	UpdateRefundStatusFunc func(ctx context.Context, refundID, newStatus, adminNote string) (*models.RefundRequestRecord, error)
+	RequestRefundOTPFunc       func(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error
+	GetRefundByOrderCodeFunc   func(ctx context.Context, orderCode string) (*models.RefundRequestRecord, error)
+	GetRefundWithOTPFunc       func(ctx context.Context, orderCode string) (*models.RefundRequestRecord, string, time.Time, error)
+	GetRefundStatusFunc        func(ctx context.Context, orderCode, userEmail string) (*models.RefundRequestRecord, string, error)
+	SubmitRefundFunc           func(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error)
+	SubmitDirectUserRefundFunc func(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error)
+	GetAllRefundsFunc          func(ctx context.Context) ([]models.RefundRequestRecord, error)
+	GetUserRefundsFunc         func(ctx context.Context, userEmail string) ([]models.RefundRequestRecord, error)
+	UpdateRefundStatusFunc     func(ctx context.Context, refundID, newStatus, adminNote string) (*models.RefundRequestRecord, error)
 }
 
 func (m *MockRefundRepository) RequestRefundOTP(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error {
@@ -254,6 +256,13 @@ func (m *MockRefundRepository) GetRefundStatus(ctx context.Context, orderCode, u
 func (m *MockRefundRepository) SubmitRefund(ctx context.Context, input *models.SubmitRefundInput) (*models.RefundRequestRecord, error) {
 	if m.SubmitRefundFunc != nil {
 		return m.SubmitRefundFunc(ctx, input)
+	}
+	return nil, nil
+}
+
+func (m *MockRefundRepository) SubmitDirectUserRefund(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error) {
+	if m.SubmitDirectUserRefundFunc != nil {
+		return m.SubmitDirectUserRefundFunc(ctx, order, input)
 	}
 	return nil, nil
 }
@@ -366,6 +375,73 @@ func (m *MockUserRepository) IssueOTP(ctx context.Context, email, purpose, otpCo
 func (m *MockUserRepository) VerifyOTP(ctx context.Context, email, purpose, otpCode string, maxAttempts int) error {
 	if m.VerifyOTPFunc != nil {
 		return m.VerifyOTPFunc(ctx, email, purpose, otpCode, maxAttempts)
+	}
+	return nil
+}
+
+type MockPromoRepository struct {
+	GetPromoByCodeFunc    func(ctx context.Context, code string) (*models.Promotion, error)
+	HasUserUsedPromoFunc  func(ctx context.Context, promotionID, userID string) (bool, error)
+	GetAllPromosFunc      func(ctx context.Context) ([]models.Promotion, error)
+	GetActivePromosFunc   func(ctx context.Context) ([]models.Promotion, error)
+	CreatePromoFunc       func(ctx context.Context, req *models.CreatePromoRequest) (*models.Promotion, error)
+	UpdatePromoFunc       func(ctx context.Context, id string, req *models.UpdatePromoRequest) (*models.Promotion, error)
+	TogglePromoActiveFunc func(ctx context.Context, id string) (bool, error)
+	DeletePromoFunc       func(ctx context.Context, id string) error
+}
+
+func (m *MockPromoRepository) GetPromoByCode(ctx context.Context, code string) (*models.Promotion, error) {
+	if m.GetPromoByCodeFunc != nil {
+		return m.GetPromoByCodeFunc(ctx, code)
+	}
+	return nil, nil
+}
+
+func (m *MockPromoRepository) HasUserUsedPromo(ctx context.Context, promotionID, userID string) (bool, error) {
+	if m.HasUserUsedPromoFunc != nil {
+		return m.HasUserUsedPromoFunc(ctx, promotionID, userID)
+	}
+	return false, nil
+}
+
+func (m *MockPromoRepository) GetAllPromos(ctx context.Context) ([]models.Promotion, error) {
+	if m.GetAllPromosFunc != nil {
+		return m.GetAllPromosFunc(ctx)
+	}
+	return []models.Promotion{}, nil
+}
+
+func (m *MockPromoRepository) GetActivePromos(ctx context.Context) ([]models.Promotion, error) {
+	if m.GetActivePromosFunc != nil {
+		return m.GetActivePromosFunc(ctx)
+	}
+	return []models.Promotion{}, nil
+}
+
+func (m *MockPromoRepository) CreatePromo(ctx context.Context, req *models.CreatePromoRequest) (*models.Promotion, error) {
+	if m.CreatePromoFunc != nil {
+		return m.CreatePromoFunc(ctx, req)
+	}
+	return nil, nil
+}
+
+func (m *MockPromoRepository) UpdatePromo(ctx context.Context, id string, req *models.UpdatePromoRequest) (*models.Promotion, error) {
+	if m.UpdatePromoFunc != nil {
+		return m.UpdatePromoFunc(ctx, id, req)
+	}
+	return nil, nil
+}
+
+func (m *MockPromoRepository) TogglePromoActive(ctx context.Context, id string) (bool, error) {
+	if m.TogglePromoActiveFunc != nil {
+		return m.TogglePromoActiveFunc(ctx, id)
+	}
+	return false, nil
+}
+
+func (m *MockPromoRepository) DeletePromo(ctx context.Context, id string) error {
+	if m.DeletePromoFunc != nil {
+		return m.DeletePromoFunc(ctx, id)
 	}
 	return nil
 }
