@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Zyrexnn/SymphoniaTic-be/config"
 	"github.com/Zyrexnn/SymphoniaTic-be/controllers"
 	"github.com/Zyrexnn/SymphoniaTic-be/database"
 	"github.com/Zyrexnn/SymphoniaTic-be/middleware"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
+	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
 )
@@ -237,4 +239,164 @@ func TestE2ECompleteUserFlow(t *testing.T) {
 	}
 
 	t.Log("✅ E2E Complete User Flow Test PASSED successfully with 0 errors!")
+}
+
+func TestE2ESuperAdminStaffAndAuditFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Melewati E2E Super Admin integration test pada mode short (tanpa koneksi live PostgreSQL)")
+	}
+
+	_ = godotenv.Load("../.env")
+	cfg, err := config.LoadConfig("../.env")
+	if err != nil {
+		t.Fatalf("Gagal memuat konfigurasi: %v", err)
+	}
+	if err := database.TryConnectDB(); err != nil {
+		t.Skip("PostgreSQL database tidak tersedia, melewati E2E test Super Admin")
+		return
+	}
+
+	orderRepo := repositories.NewOrderRepository(database.DB)
+	staffRepo := repositories.NewAdminUserRepository(database.DB)
+	adminCtrl := controllers.NewAdminControllerWithStaffRepo(orderRepo, staffRepo, &cfg.Auth)
+	staffCtrl := controllers.NewStaffController(staffRepo)
+
+	app := fiber.New()
+	admin := app.Group("/api/v1/admin")
+	admin.Post("/login", adminCtrl.AdminLogin)
+
+	guardSuper := middleware.RequireAdminAuth("SUPER_ADMIN")
+	admin.Get("/staff", guardSuper, staffCtrl.GetAllStaff)
+	admin.Post("/staff", guardSuper, staffCtrl.CreateStaff)
+	admin.Put("/staff/:id", guardSuper, staffCtrl.UpdateStaff)
+	admin.Patch("/staff/:id/status", guardSuper, staffCtrl.ToggleStaffStatus)
+	admin.Post("/staff/:id/reset-password", guardSuper, staffCtrl.ResetStaffPassword)
+	admin.Delete("/staff/:id", guardSuper, staffCtrl.DeleteStaff)
+	admin.Get("/audit-logs", guardSuper, staffCtrl.GetAuditLogs)
+
+	// 1. Login sebagai SUPER_ADMIN seeded
+	loginSuperBody, _ := json.Marshal(models.AdminLoginRequest{Username: "superadmin", Password: "123"})
+	reqLoginSuper := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", bytes.NewReader(loginSuperBody))
+	reqLoginSuper.Header.Set("Content-Type", "application/json")
+	respLoginSuper, err := app.Test(reqLoginSuper, -1)
+	if err != nil || respLoginSuper.StatusCode != http.StatusOK {
+		t.Fatalf("Login superadmin gagal: status=%v err=%v", respLoginSuper, err)
+	}
+	var loginSuperResp models.APIResponse
+	_ = json.NewDecoder(respLoginSuper.Body).Decode(&loginSuperResp)
+	superData := loginSuperResp.Data.(map[string]interface{})
+	superToken := superData["token"].(string)
+
+	// 2. Buat akun staf sementara (PETUGAS)
+	tempUsername := fmt.Sprintf("e2e_staff_%d", time.Now().UnixNano())
+	createBody, _ := json.Marshal(models.CreateStaffRequest{
+		Username: tempUsername,
+		Name:     "E2E Temp Staff",
+		Email:    tempUsername + "@symphoniatic.id",
+		Password: "TempPassword123!",
+		Role:     "PETUGAS",
+	})
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/v1/admin/staff", bytes.NewReader(createBody))
+	reqCreate.Header.Set("Authorization", "Bearer "+superToken)
+	reqCreate.Header.Set("Content-Type", "application/json")
+	respCreate, err := app.Test(reqCreate, -1)
+	if err != nil || respCreate.StatusCode != http.StatusCreated {
+		t.Fatalf("CreateStaff gagal: status=%v err=%v", respCreate, err)
+	}
+	var createResp models.APIResponse
+	_ = json.NewDecoder(respCreate.Body).Decode(&createResp)
+	createdMap := createResp.Data.(map[string]interface{})
+	staffID := createdMap["id"].(string)
+
+	// 3. Login dengan akun staf baru -> verifikasi PETUGAS ditolak 403 di /admin/staff
+	loginTempBody, _ := json.Marshal(models.AdminLoginRequest{Username: tempUsername, Password: "TempPassword123!"})
+	reqLoginTemp := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", bytes.NewReader(loginTempBody))
+	reqLoginTemp.Header.Set("Content-Type", "application/json")
+	respLoginTemp, err := app.Test(reqLoginTemp, -1)
+	if err != nil || respLoginTemp.StatusCode != http.StatusOK {
+		t.Fatalf("Login staf baru gagal: status=%v err=%v", respLoginTemp, err)
+	}
+	var loginTempResp models.APIResponse
+	_ = json.NewDecoder(respLoginTemp.Body).Decode(&loginTempResp)
+	tempToken := loginTempResp.Data.(map[string]interface{})["token"].(string)
+
+	reqForbidden := httptest.NewRequest(http.MethodGet, "/api/v1/admin/staff", nil)
+	reqForbidden.Header.Set("Authorization", "Bearer "+tempToken)
+	respForbidden, _ := app.Test(reqForbidden, -1)
+	if respForbidden.StatusCode != http.StatusForbidden {
+		t.Fatalf("PETUGAS harus ditolak 403 pada /admin/staff, dapat: %d", respForbidden.StatusCode)
+	}
+
+	// 4. Update role staf menjadi ADMIN
+	updateBody, _ := json.Marshal(models.UpdateStaffRequest{
+		Name:  "E2E Temp Staff Updated",
+		Email: tempUsername + "@symphoniatic.id",
+		Role:  "ADMIN",
+	})
+	reqUpdate := httptest.NewRequest(http.MethodPut, "/api/v1/admin/staff/"+staffID, bytes.NewReader(updateBody))
+	reqUpdate.Header.Set("Authorization", "Bearer "+superToken)
+	reqUpdate.Header.Set("Content-Type", "application/json")
+	respUpdate, _ := app.Test(reqUpdate, -1)
+	if respUpdate.StatusCode != http.StatusOK {
+		t.Fatalf("UpdateStaff gagal: status=%d", respUpdate.StatusCode)
+	}
+
+	// 5. Nonaktifkan staf -> verifikasi login ditolak 403
+	reqToggle := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/staff/"+staffID+"/status", nil)
+	reqToggle.Header.Set("Authorization", "Bearer "+superToken)
+	respToggle, _ := app.Test(reqToggle, -1)
+	if respToggle.StatusCode != http.StatusOK {
+		t.Fatalf("ToggleStaffStatus (nonaktif) gagal: status=%d", respToggle.StatusCode)
+	}
+
+	reqInactiveLogin := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", bytes.NewReader(loginTempBody))
+	reqInactiveLogin.Header.Set("Content-Type", "application/json")
+	respInactiveLogin, _ := app.Test(reqInactiveLogin, -1)
+	if respInactiveLogin.StatusCode != http.StatusForbidden {
+		t.Fatalf("Login akun nonaktif harus ditolak 403, dapat: %d", respInactiveLogin.StatusCode)
+	}
+
+	// 6. Aktifkan kembali & reset password -> login dengan sandi baru berhasil
+	reqReenable := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/staff/"+staffID+"/status", nil)
+	reqReenable.Header.Set("Authorization", "Bearer "+superToken)
+	_, _ = app.Test(reqReenable, -1)
+
+	resetBody, _ := json.Marshal(models.ResetStaffPasswordRequest{NewPassword: "NewResetPass456!"})
+	reqReset := httptest.NewRequest(http.MethodPost, "/api/v1/admin/staff/"+staffID+"/reset-password", bytes.NewReader(resetBody))
+	reqReset.Header.Set("Authorization", "Bearer "+superToken)
+	reqReset.Header.Set("Content-Type", "application/json")
+	respReset, _ := app.Test(reqReset, -1)
+	if respReset.StatusCode != http.StatusOK {
+		t.Fatalf("ResetStaffPassword gagal: status=%d", respReset.StatusCode)
+	}
+
+	loginNewPassBody, _ := json.Marshal(models.AdminLoginRequest{Username: tempUsername, Password: "NewResetPass456!"})
+	reqNewPass := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", bytes.NewReader(loginNewPassBody))
+	reqNewPass.Header.Set("Content-Type", "application/json")
+	respNewPass, _ := app.Test(reqNewPass, -1)
+	if respNewPass.StatusCode != http.StatusOK {
+		t.Fatalf("Login dengan kata sandi reset gagal: status=%d", respNewPass.StatusCode)
+	}
+
+	// 7. Hapus akun staf sementara
+	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/staff/"+staffID, nil)
+	reqDel.Header.Set("Authorization", "Bearer "+superToken)
+	respDel, _ := app.Test(reqDel, -1)
+	if respDel.StatusCode != http.StatusOK {
+		t.Fatalf("DeleteStaff gagal: status=%d", respDel.StatusCode)
+	}
+
+	// 8. Verifikasi audit logs tercatat di PostgreSQL
+	reqLogs := httptest.NewRequest(http.MethodGet, "/api/v1/admin/audit-logs?search="+tempUsername, nil)
+	reqLogs.Header.Set("Authorization", "Bearer "+superToken)
+	respLogs, err := app.Test(reqLogs, -1)
+	if err != nil || respLogs.StatusCode != http.StatusOK {
+		t.Fatalf("GetAuditLogs gagal: status=%v err=%v", respLogs, err)
+	}
+	var logsResp models.APIResponse
+	_ = json.NewDecoder(respLogs.Body).Decode(&logsResp)
+	logsSlice := logsResp.Data.([]interface{})
+	if len(logsSlice) < 4 {
+		t.Fatalf("Ekspektasi minimal 4 entri audit log untuk siklus hidup staf, dapat %d", len(logsSlice))
+	}
 }

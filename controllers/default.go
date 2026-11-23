@@ -27,13 +27,14 @@ func InitDefaultControllers(db *sql.DB, authCfg *config.AuthConfig) {
 	eventRepo := repositories.NewEventRepository(db)
 	orderRepo := repositories.NewOrderRepository(db)
 	refundRepo := repositories.NewRefundRepository(db)
+	staffRepo := repositories.NewAdminUserRepository(db)
 
 	defaultEventCtrl = NewEventController(eventRepo)
 	defaultCategoryCtrl = NewCategoryController(eventRepo)
 	defaultOrderCtrl = NewOrderController(orderRepo)
 	defaultTicketCtrl = NewTicketController(orderRepo)
 	defaultRefundCtrl = NewRefundControllerWithOrderRepo(refundRepo, orderRepo)
-	defaultAdminCtrl = NewAdminController(orderRepo, authCfg)
+	defaultAdminCtrl = NewAdminControllerWithStaffRepo(orderRepo, staffRepo, authCfg)
 }
 
 func ensureDefaultControllers() {

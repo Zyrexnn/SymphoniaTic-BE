@@ -33,11 +33,13 @@ type SMTPConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret       string
-	AdminUsername   string
-	AdminPassword   string
-	PetugasUsername string
-	PetugasPassword string
+	JWTSecret          string
+	SuperAdminUsername string
+	SuperAdminPassword string
+	AdminUsername      string
+	AdminPassword      string
+	PetugasUsername    string
+	PetugasPassword    string
 }
 
 type Config struct {
@@ -81,11 +83,13 @@ func LoadConfig(filenames ...string) (*Config, error) {
 			SenderName:  getEnv("SMTP_SENDER_NAME", "SymphoniaTic E-Ticket System"),
 		},
 		Auth: AuthConfig{
-			JWTSecret:       os.Getenv("JWT_SECRET"),
-			AdminUsername:   os.Getenv("ADMIN_USERNAME"),
-			AdminPassword:   os.Getenv("ADMIN_PASSWORD"),
-			PetugasUsername: os.Getenv("PETUGAS_USERNAME"),
-			PetugasPassword: os.Getenv("PETUGAS_PASSWORD"),
+			JWTSecret:          os.Getenv("JWT_SECRET"),
+			SuperAdminUsername: os.Getenv("SUPER_ADMIN_USERNAME"),
+			SuperAdminPassword: os.Getenv("SUPER_ADMIN_PASSWORD"),
+			AdminUsername:      os.Getenv("ADMIN_USERNAME"),
+			AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
+			PetugasUsername:    os.Getenv("PETUGAS_USERNAME"),
+			PetugasPassword:    os.Getenv("PETUGAS_PASSWORD"),
 		},
 	}
 

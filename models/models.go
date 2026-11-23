@@ -133,6 +133,49 @@ type AdminLoginRequest struct {
 	Password string `json:"password"`
 }
 
+type AdminUser struct {
+	ID           string    `json:"id"`
+	Username     string    `json:"username"`
+	Name         string    `json:"name"`
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"-"`
+	Role         string    `json:"role"`
+	IsActive     bool      `json:"isActive"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type CreateStaffRequest struct {
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+	IsActive *bool  `json:"isActive,omitempty"`
+}
+
+type UpdateStaffRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+type ResetStaffPasswordRequest struct {
+	NewPassword string `json:"newPassword"`
+}
+
+type AuditLog struct {
+	ID             string    `json:"id"`
+	ActorID        string    `json:"actorId"`
+	ActorName      string    `json:"actorName"`
+	ActorRole      string    `json:"actorRole"`
+	Action         string    `json:"action"`
+	TargetResource string    `json:"targetResource"`
+	Details        string    `json:"details"`
+	IPAddress      string    `json:"ipAddress"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
 type CreateCategoryInput struct {
 	Name  string  `json:"name"`
 	Price float64 `json:"price"`

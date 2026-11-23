@@ -8,11 +8,12 @@ import (
 )
 
 var (
-	_ EventRepository  = (*MockEventRepository)(nil)
-	_ OrderRepository  = (*MockOrderRepository)(nil)
-	_ RefundRepository = (*MockRefundRepository)(nil)
-	_ UserRepository   = (*MockUserRepository)(nil)
-	_ PromoRepository  = (*MockPromoRepository)(nil)
+	_ EventRepository     = (*MockEventRepository)(nil)
+	_ OrderRepository     = (*MockOrderRepository)(nil)
+	_ RefundRepository    = (*MockRefundRepository)(nil)
+	_ UserRepository      = (*MockUserRepository)(nil)
+	_ PromoRepository     = (*MockPromoRepository)(nil)
+	_ AdminUserRepository = (*MockAdminUserRepository)(nil)
 )
 
 type MockEventRepository struct {
@@ -444,4 +445,95 @@ func (m *MockPromoRepository) DeletePromo(ctx context.Context, id string) error 
 		return m.DeletePromoFunc(ctx, id)
 	}
 	return nil
+}
+
+type MockAdminUserRepository struct {
+	GetByUsernameFunc          func(ctx context.Context, username string) (*models.AdminUser, error)
+	GetByIDFunc                func(ctx context.Context, id string) (*models.AdminUser, error)
+	GetAllStaffFunc            func(ctx context.Context, roleFilter string, search string) ([]models.AdminUser, error)
+	CreateStaffFunc            func(ctx context.Context, req *models.CreateStaffRequest, passwordHash string) (*models.AdminUser, error)
+	UpdateStaffFunc            func(ctx context.Context, id string, req *models.UpdateStaffRequest) (*models.AdminUser, error)
+	ToggleStaffActiveFunc      func(ctx context.Context, id string) (*models.AdminUser, error)
+	ResetStaffPasswordFunc     func(ctx context.Context, id string, passwordHash string) error
+	DeleteStaffFunc            func(ctx context.Context, id string) error
+	CountActiveSuperAdminsFunc func(ctx context.Context) (int, error)
+	CreateAuditLogFunc         func(ctx context.Context, logEntry *models.AuditLog) error
+	GetAuditLogsFunc           func(ctx context.Context, actionFilter, search string, limit int) ([]models.AuditLog, error)
+}
+
+func (m *MockAdminUserRepository) GetByUsername(ctx context.Context, username string) (*models.AdminUser, error) {
+	if m.GetByUsernameFunc != nil {
+		return m.GetByUsernameFunc(ctx, username)
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockAdminUserRepository) GetByID(ctx context.Context, id string) (*models.AdminUser, error) {
+	if m.GetByIDFunc != nil {
+		return m.GetByIDFunc(ctx, id)
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockAdminUserRepository) GetAllStaff(ctx context.Context, roleFilter string, search string) ([]models.AdminUser, error) {
+	if m.GetAllStaffFunc != nil {
+		return m.GetAllStaffFunc(ctx, roleFilter, search)
+	}
+	return []models.AdminUser{}, nil
+}
+
+func (m *MockAdminUserRepository) CreateStaff(ctx context.Context, req *models.CreateStaffRequest, passwordHash string) (*models.AdminUser, error) {
+	if m.CreateStaffFunc != nil {
+		return m.CreateStaffFunc(ctx, req, passwordHash)
+	}
+	return nil, nil
+}
+
+func (m *MockAdminUserRepository) UpdateStaff(ctx context.Context, id string, req *models.UpdateStaffRequest) (*models.AdminUser, error) {
+	if m.UpdateStaffFunc != nil {
+		return m.UpdateStaffFunc(ctx, id, req)
+	}
+	return nil, nil
+}
+
+func (m *MockAdminUserRepository) ToggleStaffActive(ctx context.Context, id string) (*models.AdminUser, error) {
+	if m.ToggleStaffActiveFunc != nil {
+		return m.ToggleStaffActiveFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+func (m *MockAdminUserRepository) ResetStaffPassword(ctx context.Context, id string, passwordHash string) error {
+	if m.ResetStaffPasswordFunc != nil {
+		return m.ResetStaffPasswordFunc(ctx, id, passwordHash)
+	}
+	return nil
+}
+
+func (m *MockAdminUserRepository) DeleteStaff(ctx context.Context, id string) error {
+	if m.DeleteStaffFunc != nil {
+		return m.DeleteStaffFunc(ctx, id)
+	}
+	return nil
+}
+
+func (m *MockAdminUserRepository) CountActiveSuperAdmins(ctx context.Context) (int, error) {
+	if m.CountActiveSuperAdminsFunc != nil {
+		return m.CountActiveSuperAdminsFunc(ctx)
+	}
+	return 1, nil
+}
+
+func (m *MockAdminUserRepository) CreateAuditLog(ctx context.Context, logEntry *models.AuditLog) error {
+	if m.CreateAuditLogFunc != nil {
+		return m.CreateAuditLogFunc(ctx, logEntry)
+	}
+	return nil
+}
+
+func (m *MockAdminUserRepository) GetAuditLogs(ctx context.Context, actionFilter, search string, limit int) ([]models.AuditLog, error) {
+	if m.GetAuditLogsFunc != nil {
+		return m.GetAuditLogsFunc(ctx, actionFilter, search, limit)
+	}
+	return []models.AuditLog{}, nil
 }

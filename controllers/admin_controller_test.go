@@ -189,6 +189,65 @@ func TestAdminController_AdminLogin(t *testing.T) {
 		}
 	})
 
+	t.Run("Sukses dengan role SUPER_ADMIN dari config (200 OK & JWT token)", func(t *testing.T) {
+		cfgWithSuper := &config.AuthConfig{
+			SuperAdminUsername: "boss_symphonia",
+			SuperAdminPassword: "SuperSecret2026!",
+			AdminUsername:      "admin_symphonia",
+			AdminPassword:      "AdminSecret2026!",
+			JWTSecret:          authCfg.JWTSecret,
+		}
+		app := setupAdminControllerTest(&repositories.MockOrderRepository{}, cfgWithSuper)
+		bodyBytes, _ := json.Marshal(models.AdminLoginRequest{
+			Username: "boss_symphonia",
+			Password: "SuperSecret2026!",
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/login", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK untuk SUPER_ADMIN, dapat %d err=%v", resp.StatusCode, err)
+		}
+		var apiResp models.APIResponse
+		_ = json.NewDecoder(resp.Body).Decode(&apiResp)
+		dataMap := apiResp.Data.(map[string]interface{})
+		claims, err := utils.ValidateUserToken(dataMap["token"].(string))
+		if err != nil || claims.Role != "SUPER_ADMIN" {
+			t.Fatalf("Ekspektasi klaim SUPER_ADMIN, dapat %v role=%s", err, claims.Role)
+		}
+	})
+
+	t.Run("Menolak staf nonaktif dari database dengan 403 Forbidden", func(t *testing.T) {
+		hash, _ := utils.HashPassword("Secret123!")
+		staffRepo := &repositories.MockAdminUserRepository{
+			GetByUsernameFunc: func(ctx context.Context, username string) (*models.AdminUser, error) {
+				return &models.AdminUser{
+					ID:           "staff-inactive-1",
+					Username:     username,
+					Name:         "Staf Nonaktif",
+					Email:        "nonaktif@symphoniatic.id",
+					PasswordHash: hash,
+					Role:         "ADMIN",
+					IsActive:     false,
+				}, nil
+			},
+		}
+		app := fiber.New()
+		ctrl := controllers.NewAdminControllerWithStaffRepo(&repositories.MockOrderRepository{}, staffRepo, authCfg)
+		app.Post("/api/v1/admin/login", ctrl.AdminLogin)
+
+		bodyBytes, _ := json.Marshal(models.AdminLoginRequest{
+			Username: "nonaktif",
+			Password: "Secret123!",
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/login", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil || resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("Ekspektasi 403 Forbidden untuk staf nonaktif, dapat %d err=%v", resp.StatusCode, err)
+		}
+	})
+
 	t.Run("Gagal (400 Bad Request) saat ekstensi file tidak diizinkan", func(t *testing.T) {
 		mockRepo := &repositories.MockOrderRepository{}
 		app := setupAdminControllerTest(mockRepo, nil)

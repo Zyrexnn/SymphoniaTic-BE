@@ -275,28 +275,38 @@ All endpoints in the SymphoniaTic REST API return consistent JSON structures usi
 | `POST` | `/api/v1/refunds/submit` | Submit refund form (OTP + bank account) | Public |
 | `POST` | `/api/v1/refunds/status` | Check refund status by order code and email | Public |
 
-### 6. Admin & Gate Officer Panel (`/api/v1/admin`)
+### 6. Super Admin, Admin & Gate Officer Panel (`/api/v1/admin`)
 
-Otorisasi endpoint `/api/v1/admin` menerapkan prinsip *Least Privilege*: rute manajemen konser, finansial, dan refund dikunci eksklusif untuk `ADMIN`, sedangkan rute operasional pintu masuk dapat diakses oleh `ADMIN` dan `PETUGAS`.
+Otorisasi endpoint `/api/v1/admin` menerapkan prinsip *Least Privilege* berjenjang:
+- **`PETUGAS`**: Dibatasi pada operasional pintu masuk (`/orders` read-only, `/tickets/checkin`, `/tickets/attendance-summary`).
+- **`ADMIN`**: Mengelola konser, kategori kursi, promo, pesanan, metrik, dan permohonan refund.
+- **`SUPER_ADMIN`**: Memiliki akses penuh termasuk manajemen akun staf dinamis (`admin_users`) dan penelusuran rekam jejak aktivitas (`audit_logs`).
 
 | Method | Endpoint | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/admin/login` | Admin / Gate Officer login (menerbitkan JWT sesuai role) | Public |
-| `GET` | `/api/v1/admin/dashboard` | Real-time analytics (revenue, tickets, breakdown) | `ADMIN` |
-| `POST` | `/api/v1/admin/upload` | Upload event poster image (multipart form data) | `ADMIN` |
-| `POST` | `/api/v1/admin/events` | Create new concert event and ticket categories | `ADMIN` |
-| `PUT` | `/api/v1/admin/events/:id` | Update concert event details | `ADMIN` |
-| `PATCH` | `/api/v1/admin/events/:id/toggle-close` | Open or close concert ticket sales | `ADMIN` |
-| `DELETE` | `/api/v1/admin/events/:id` | Delete concert event and categories | `ADMIN` |
-| `POST` | `/api/v1/admin/events/:id/categories` | Add ticket category to event | `ADMIN` |
-| `PUT` | `/api/v1/admin/categories/:id` | Update ticket category (price, name, quota) | `ADMIN` |
-| `DELETE` | `/api/v1/admin/categories/:id` | Delete ticket category | `ADMIN` |
-| `GET` | `/api/v1/admin/orders` | List all transactions (`?search=` and `?status=`) | `ADMIN`, `PETUGAS` |
-| `PATCH` | `/api/v1/admin/orders/:id/status` | Update transaction status (`CHECKED_IN`, `REMINDED`, etc.) | `ADMIN` |
-| `POST` | `/api/v1/admin/tickets/checkin` | Atomic ticket QR check-in validation | `ADMIN`, `PETUGAS` |
-| `GET` | `/api/v1/admin/tickets/attendance-summary` | Gate attendance summary (`?event_id=` optional) | `ADMIN`, `PETUGAS` |
-| `GET` | `/api/v1/admin/refunds` | List all refund submissions | `ADMIN` |
-| `PATCH` | `/api/v1/admin/refunds/:id/status` | Approve or reject refund with auto quota restock | `ADMIN` |
+| `POST` | `/api/v1/admin/login` | Super Admin / Admin / Gate Officer login (DB `admin_users` + fallback env) | Public |
+| `GET` | `/api/v1/admin/staff` | List semua akun staf (`?role=`, `?search=`) | `SUPER_ADMIN` |
+| `POST` | `/api/v1/admin/staff` | Tambah akun staf baru (`SUPER_ADMIN`, `ADMIN`, `PETUGAS`) | `SUPER_ADMIN` |
+| `PUT` | `/api/v1/admin/staff/:id` | Perbarui profil dan peran akun staf | `SUPER_ADMIN` |
+| `PATCH` | `/api/v1/admin/staff/:id/status` | Aktifkan atau nonaktifkan akun staf | `SUPER_ADMIN` |
+| `POST` | `/api/v1/admin/staff/:id/reset-password` | Reset kata sandi akun staf | `SUPER_ADMIN` |
+| `DELETE` | `/api/v1/admin/staff/:id` | Hapus permanen akun staf | `SUPER_ADMIN` |
+| `GET` | `/api/v1/admin/audit-logs` | Riwayat log audit kronologis (`?action=`, `?search=`, `?limit=`) | `SUPER_ADMIN` |
+| `GET` | `/api/v1/admin/dashboard` | Real-time analytics (revenue, tickets, breakdown) | `ADMIN`, `SUPER_ADMIN` |
+| `POST` | `/api/v1/admin/upload` | Upload event poster image (multipart form data) | `ADMIN`, `SUPER_ADMIN` |
+| `POST` | `/api/v1/admin/events` | Create new concert event and ticket categories | `ADMIN`, `SUPER_ADMIN` |
+| `PUT` | `/api/v1/admin/events/:id` | Update concert event details | `ADMIN`, `SUPER_ADMIN` |
+| `PATCH` | `/api/v1/admin/events/:id/toggle-close` | Open or close concert ticket sales | `ADMIN`, `SUPER_ADMIN` |
+| `DELETE` | `/api/v1/admin/events/:id` | Delete concert event and categories | `ADMIN`, `SUPER_ADMIN` |
+| `POST` | `/api/v1/admin/events/:id/categories` | Add ticket category to event | `ADMIN`, `SUPER_ADMIN` |
+| `PUT` | `/api/v1/admin/categories/:id` | Update ticket category (price, name, quota) | `ADMIN`, `SUPER_ADMIN` |
+| `DELETE` | `/api/v1/admin/categories/:id` | Delete ticket category | `ADMIN`, `SUPER_ADMIN` |
+| `GET` | `/api/v1/admin/orders` | List all transactions (`?search=` and `?status=`) | `SUPER_ADMIN`, `ADMIN`, `PETUGAS` |
+| `PATCH` | `/api/v1/admin/orders/:id/status` | Update transaction status (`CHECKED_IN`, `REMINDED`, etc.) | `ADMIN`, `SUPER_ADMIN` |
+| `POST` | `/api/v1/admin/tickets/checkin` | Atomic ticket QR check-in validation | `SUPER_ADMIN`, `ADMIN`, `PETUGAS` |
+| `GET` | `/api/v1/admin/tickets/attendance-summary` | Gate attendance summary (`?event_id=` optional) | `SUPER_ADMIN`, `ADMIN`, `PETUGAS` |
+| `GET` | `/api/v1/admin/refunds` | List all refund submissions | `ADMIN`, `SUPER_ADMIN` |
+| `PATCH` | `/api/v1/admin/refunds/:id/status` | Approve or reject refund with auto quota restock | `ADMIN`, `SUPER_ADMIN` |
 
 ---
 

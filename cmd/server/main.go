@@ -65,15 +65,31 @@ func setupRouter(
 	refundRepo repositories.RefundRepository,
 	promoRepo ...repositories.PromoRepository,
 ) *fiber.App {
+	var activePromoRepo repositories.PromoRepository = &repositories.MockPromoRepository{}
+	if len(promoRepo) > 0 && promoRepo[0] != nil {
+		activePromoRepo = promoRepo[0]
+	}
+	return setupRouterWithStaff(cfg, eventRepo, orderRepo, refundRepo, activePromoRepo, &repositories.MockAdminUserRepository{})
+}
+
+func setupRouterWithStaff(
+	cfg *config.Config,
+	eventRepo repositories.EventRepository,
+	orderRepo repositories.OrderRepository,
+	refundRepo repositories.RefundRepository,
+	promoRepo repositories.PromoRepository,
+	staffRepo repositories.AdminUserRepository,
+) *fiber.App {
 	eventCtrl := controllers.NewEventController(eventRepo)
 	categoryCtrl := controllers.NewCategoryController(eventRepo)
 	orderCtrl := controllers.NewOrderController(orderRepo)
 	ticketCtrl := controllers.NewTicketController(orderRepo)
 	refundCtrl := controllers.NewRefundControllerWithOrderRepo(refundRepo, orderRepo)
-	adminCtrl := controllers.NewAdminController(orderRepo, &cfg.Auth)
-	var activePromoRepo repositories.PromoRepository = &repositories.MockPromoRepository{}
-	if len(promoRepo) > 0 && promoRepo[0] != nil {
-		activePromoRepo = promoRepo[0]
+	adminCtrl := controllers.NewAdminControllerWithStaffRepo(orderRepo, staffRepo, &cfg.Auth)
+	staffCtrl := controllers.NewStaffController(staffRepo)
+	activePromoRepo := promoRepo
+	if activePromoRepo == nil {
+		activePromoRepo = &repositories.MockPromoRepository{}
 	}
 	promoCtrl := controllers.NewPromoController(activePromoRepo)
 
@@ -143,11 +159,21 @@ func setupRouter(
 	userGroup.Get("/refunds", controllers.GetUserRefunds)
 
 	admin := api.Group("/admin")
+	admin.Use(controllers.AuditTrailMiddleware(staffRepo))
 	admin.Post("/login", authRateLimiter, adminCtrl.AdminLogin)
 
 	// Pemisahan middleware per-rute (alih-alih Group("")) agar otorisasi ADMIN tidak bocor memblokir rute PETUGAS di prefix /admin yang sama
+	requireSuperAdminOnly := middleware.RequireAdminAuth("SUPER_ADMIN")
 	requireAdminOnly := middleware.RequireAdminAuth("ADMIN")
 	requireGateOrAdmin := middleware.RequireAdminAuth("ADMIN", "PETUGAS")
+
+	admin.Get("/staff", requireSuperAdminOnly, staffCtrl.GetAllStaff)
+	admin.Post("/staff", requireSuperAdminOnly, staffCtrl.CreateStaff)
+	admin.Put("/staff/:id", requireSuperAdminOnly, staffCtrl.UpdateStaff)
+	admin.Patch("/staff/:id/status", requireSuperAdminOnly, staffCtrl.ToggleStaffStatus)
+	admin.Post("/staff/:id/reset-password", requireSuperAdminOnly, staffCtrl.ResetStaffPassword)
+	admin.Delete("/staff/:id", requireSuperAdminOnly, staffCtrl.DeleteStaff)
+	admin.Get("/audit-logs", requireSuperAdminOnly, staffCtrl.GetAuditLogs)
 
 	admin.Get("/dashboard", requireAdminOnly, adminCtrl.GetAdminDashboardMetrics)
 	admin.Post("/upload", requireAdminOnly, adminCtrl.UploadImage)
@@ -202,10 +228,11 @@ func main() {
 	orderRepo := repositories.NewOrderRepository(database.DB)
 	refundRepo := repositories.NewRefundRepository(database.DB)
 	promoRepo := repositories.NewPromoRepository(database.DB)
+	staffRepo := repositories.NewAdminUserRepository(database.DB)
 
 	controllers.InitDefaultControllers(database.DB, &cfg.Auth)
 
-	app := setupRouter(cfg, eventRepo, orderRepo, refundRepo, promoRepo)
+	app := setupRouterWithStaff(cfg, eventRepo, orderRepo, refundRepo, promoRepo, staffRepo)
 
 	serverShutdown := make(chan struct{})
 	go func() {

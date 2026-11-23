@@ -17,14 +17,23 @@ import (
 )
 
 type AdminController struct {
-	repo    repositories.OrderRepository
-	authCfg *config.AuthConfig
+	repo      repositories.OrderRepository
+	staffRepo repositories.AdminUserRepository
+	authCfg   *config.AuthConfig
 }
 
 func NewAdminController(repo repositories.OrderRepository, authCfg *config.AuthConfig) *AdminController {
 	return &AdminController{
 		repo:    repo,
 		authCfg: authCfg,
+	}
+}
+
+func NewAdminControllerWithStaffRepo(repo repositories.OrderRepository, staffRepo repositories.AdminUserRepository, authCfg *config.AuthConfig) *AdminController {
+	return &AdminController{
+		repo:      repo,
+		staffRepo: staffRepo,
+		authCfg:   authCfg,
 	}
 }
 
@@ -54,54 +63,113 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 		})
 	}
 
-	var adminUser, adminPass, petugasUser, petugasPass string
-
-	if c.authCfg != nil {
-		adminUser = c.authCfg.AdminUsername
-		adminPass = c.authCfg.AdminPassword
-		petugasUser = c.authCfg.PetugasUsername
-		petugasPass = c.authCfg.PetugasPassword
-	} else {
-		adminUser = os.Getenv("ADMIN_USERNAME")
-		adminPass = os.Getenv("ADMIN_PASSWORD")
-		petugasUser = os.Getenv("PETUGAS_USERNAME")
-		petugasPass = os.Getenv("PETUGAS_PASSWORD")
-	}
-
-	if adminUser == "" || adminPass == "" {
-		return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
-			Success: false,
-			Message: "Autentikasi admin belum dikonfigurasi di environment server",
-		})
-	}
-
-	var authenticatedRole string
-	var authenticatedName string
-	var authenticatedID string
-
-	adminUserMatch := constantTimeMatch(adminLoginReq.Username, adminUser)
-	adminPassMatch := constantTimeMatch(adminLoginReq.Password, adminPass)
-	petugasUserMatch := constantTimeMatch(adminLoginReq.Username, petugasUser)
-	petugasPassMatch := constantTimeMatch(adminLoginReq.Password, petugasPass)
-
-	if adminUserMatch && adminPassMatch {
-		authenticatedRole = "ADMIN"
-		authenticatedName = "Super Administrator"
-		authenticatedID = "admin-1"
-	} else if petugasUser != "" && petugasPass != "" && petugasUserMatch && petugasPassMatch {
-		authenticatedRole = "PETUGAS"
-		authenticatedName = "Petugas Gate Officer"
-		authenticatedID = "petugas-1"
-	} else {
+	cleanUsername := strings.TrimSpace(adminLoginReq.Username)
+	if cleanUsername == "" || adminLoginReq.Password == "" {
 		return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
 			Success: false,
 			Message: "Username atau Password salah",
 		})
 	}
 
-	adminJwtToken, err := utils.GenerateUserToken(authenticatedID, adminLoginReq.Username+"@symphoniatic.id", authenticatedRole)
+	var authenticatedRole string
+	var authenticatedName string
+	var authenticatedID string
+	var authenticatedEmail string
+
+	// Cek akun staf dari PostgreSQL terlebih dahulu bila repository tersedia
+	if c.staffRepo != nil {
+		staffUser, err := c.staffRepo.GetByUsername(ctx.Context(), cleanUsername)
+		if err == nil && staffUser != nil {
+			if !staffUser.IsActive {
+				return ctx.Status(fiber.StatusForbidden).JSON(models.APIResponse{
+					Success: false,
+					Message: "Akun staf ini sedang dinonaktifkan. Hubungi Super Admin.",
+				})
+			}
+			if !utils.CheckPasswordHash(adminLoginReq.Password, staffUser.PasswordHash) {
+				return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+					Success: false,
+					Message: "Username atau Password salah",
+				})
+			}
+			authenticatedRole = staffUser.Role
+			authenticatedName = staffUser.Name
+			authenticatedID = staffUser.ID
+			authenticatedEmail = staffUser.Email
+		}
+	}
+
+	if authenticatedID == "" {
+		var superUser, superPass, adminUser, adminPass, petugasUser, petugasPass string
+
+		if c.authCfg != nil {
+			superUser = c.authCfg.SuperAdminUsername
+			superPass = c.authCfg.SuperAdminPassword
+			adminUser = c.authCfg.AdminUsername
+			adminPass = c.authCfg.AdminPassword
+			petugasUser = c.authCfg.PetugasUsername
+			petugasPass = c.authCfg.PetugasPassword
+		} else {
+			superUser = os.Getenv("SUPER_ADMIN_USERNAME")
+			superPass = os.Getenv("SUPER_ADMIN_PASSWORD")
+			adminUser = os.Getenv("ADMIN_USERNAME")
+			adminPass = os.Getenv("ADMIN_PASSWORD")
+			petugasUser = os.Getenv("PETUGAS_USERNAME")
+			petugasPass = os.Getenv("PETUGAS_PASSWORD")
+		}
+
+		if adminUser == "" && superUser == "" {
+			return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+				Success: false,
+				Message: "Autentikasi admin belum dikonfigurasi di environment server",
+			})
+		}
+
+		superUserMatch := superUser != "" && superPass != "" && constantTimeMatch(cleanUsername, superUser)
+		superPassMatch := superUser != "" && superPass != "" && constantTimeMatch(adminLoginReq.Password, superPass)
+		adminUserMatch := adminUser != "" && adminPass != "" && constantTimeMatch(cleanUsername, adminUser)
+		adminPassMatch := adminUser != "" && adminPass != "" && constantTimeMatch(adminLoginReq.Password, adminPass)
+		petugasUserMatch := petugasUser != "" && petugasPass != "" && constantTimeMatch(cleanUsername, petugasUser)
+		petugasPassMatch := petugasUser != "" && petugasPass != "" && constantTimeMatch(adminLoginReq.Password, petugasPass)
+
+		if superUserMatch && superPassMatch {
+			authenticatedRole = "SUPER_ADMIN"
+			authenticatedName = "Super Administrator"
+			authenticatedID = "staff-superadmin-1"
+			authenticatedEmail = cleanUsername + "@symphoniatic.id"
+		} else if adminUserMatch && adminPassMatch {
+			authenticatedRole = "ADMIN"
+			authenticatedName = "Administrator Operasional"
+			authenticatedID = "admin-1"
+			authenticatedEmail = cleanUsername + "@symphoniatic.id"
+		} else if petugasUserMatch && petugasPassMatch {
+			authenticatedRole = "PETUGAS"
+			authenticatedName = "Petugas Gate Officer"
+			authenticatedID = "petugas-1"
+			authenticatedEmail = cleanUsername + "@symphoniatic.id"
+		} else {
+			return ctx.Status(fiber.StatusUnauthorized).JSON(models.APIResponse{
+				Success: false,
+				Message: "Username atau Password salah",
+			})
+		}
+	}
+
+	adminJwtToken, err := utils.GenerateUserToken(authenticatedID, authenticatedEmail, authenticatedRole)
 	if err != nil {
 		return utils.ResponseInternalError(ctx, "Gagal menerbitkan token sesi", err)
+	}
+
+	if c.staffRepo != nil {
+		_ = c.staffRepo.CreateAuditLog(ctx.Context(), &models.AuditLog{
+			ActorID:        authenticatedID,
+			ActorName:      authenticatedName,
+			ActorRole:      authenticatedRole,
+			Action:         "ADMIN_LOGIN",
+			TargetResource: "auth:" + cleanUsername,
+			Details:        fmt.Sprintf("Login portal operasional sebagai %s", authenticatedRole),
+			IPAddress:      ctx.IP(),
+		})
 	}
 
 	return ctx.JSON(models.APIResponse{
@@ -111,7 +179,7 @@ func (c *AdminController) AdminLogin(ctx *fiber.Ctx) error {
 			Token: adminJwtToken,
 			User: models.UserRecord{
 				ID:         authenticatedID,
-				Email:      adminLoginReq.Username + "@symphoniatic.id",
+				Email:      authenticatedEmail,
 				Name:       authenticatedName,
 				Role:       authenticatedRole,
 				IsVerified: true,

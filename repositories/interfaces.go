@@ -36,6 +36,10 @@ var (
 	ErrPromoDuplicateCode     = errors.New("kode promo sudah digunakan, silakan pilih kode lain")
 	ErrPromoInactive          = errors.New("kode promo sedang dinonaktifkan")
 	ErrRefundAlreadyExists    = errors.New("pengajuan refund untuk pesanan ini sudah ada")
+	ErrStaffDuplicateUsername = errors.New("username atau email staf sudah terdaftar")
+	ErrStaffSelfDeactivate    = errors.New("tidak dapat menonaktifkan atau menurunkan hak akses akun sendiri yang sedang aktif")
+	ErrStaffLastSuperAdmin    = errors.New("sistem wajib memiliki minimal satu akun SUPER_ADMIN yang aktif")
+	ErrStaffInactive          = errors.New("akun staf ini sedang dinonaktifkan oleh Super Admin")
 )
 
 type ErrOTPWrongCode struct {
@@ -111,4 +115,18 @@ type UserRepository interface {
 	CheckCooldown(ctx context.Context, email, purpose string, cooldown time.Duration) (bool, error)
 	IssueOTP(ctx context.Context, email, purpose, otpCode string, expiresAt time.Time, cooldown time.Duration) error
 	VerifyOTP(ctx context.Context, email, purpose, otpCode string, maxAttempts int) error
+}
+
+type AdminUserRepository interface {
+	GetByUsername(ctx context.Context, username string) (*models.AdminUser, error)
+	GetByID(ctx context.Context, id string) (*models.AdminUser, error)
+	GetAllStaff(ctx context.Context, roleFilter string, search string) ([]models.AdminUser, error)
+	CreateStaff(ctx context.Context, req *models.CreateStaffRequest, passwordHash string) (*models.AdminUser, error)
+	UpdateStaff(ctx context.Context, id string, req *models.UpdateStaffRequest) (*models.AdminUser, error)
+	ToggleStaffActive(ctx context.Context, id string) (*models.AdminUser, error)
+	ResetStaffPassword(ctx context.Context, id string, passwordHash string) error
+	DeleteStaff(ctx context.Context, id string) error
+	CountActiveSuperAdmins(ctx context.Context) (int, error)
+	CreateAuditLog(ctx context.Context, logEntry *models.AuditLog) error
+	GetAuditLogs(ctx context.Context, actionFilter, search string, limit int) ([]models.AuditLog, error)
 }

@@ -43,11 +43,13 @@ func RequireAdminAuth(allowedRoles ...string) fiber.Handler {
 			})
 		}
 
-		roleAllowed := false
-		for _, role := range targetRoles {
-			if claims.Role == role {
-				roleAllowed = true
-				break
+		roleAllowed := claims.Role == "SUPER_ADMIN"
+		if !roleAllowed {
+			for _, role := range targetRoles {
+				if claims.Role == role {
+					roleAllowed = true
+					break
+				}
 			}
 		}
 

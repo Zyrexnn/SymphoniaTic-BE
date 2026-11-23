@@ -150,6 +150,59 @@ func TestRouter_RoleAuthorizationSegregation(t *testing.T) {
 			}
 		})
 	}
+
+	superAdminToken, err := utils.GenerateUserToken("staff-super-1", "superadmin@symphoniatic.id", "SUPER_ADMIN")
+	if err != nil {
+		t.Fatalf("Gagal menerbitkan token SUPER_ADMIN: %v", err)
+	}
+
+	superAdminExclusiveEndpoints := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/v1/admin/staff", ""},
+		{http.MethodPost, "/api/v1/admin/staff", `{}`},
+		{http.MethodPut, "/api/v1/admin/staff/staff-1", `{}`},
+		{http.MethodPatch, "/api/v1/admin/staff/staff-1/status", ""},
+		{http.MethodPost, "/api/v1/admin/staff/staff-1/reset-password", `{}`},
+		{http.MethodDelete, "/api/v1/admin/staff/staff-1", ""},
+		{http.MethodGet, "/api/v1/admin/audit-logs", ""},
+	}
+
+	for _, tc := range superAdminExclusiveEndpoints {
+		t.Run("PETUGAS dan ADMIN ditolak 403 pada "+tc.method+" "+tc.path, func(t *testing.T) {
+			for _, tok := range []string{petugasToken, adminToken} {
+				req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+				req.Header.Set("Authorization", "Bearer "+tok)
+				if tc.body != "" {
+					req.Header.Set("Content-Type", "application/json")
+				}
+				resp, err := app.Test(req)
+				if err != nil {
+					t.Fatalf("Gagal eksekusi request: %v", err)
+				}
+				if resp.StatusCode != http.StatusForbidden {
+					t.Errorf("Ekspektasi 403 Forbidden pada %s %s, dapat: %d", tc.method, tc.path, resp.StatusCode)
+				}
+			}
+		})
+
+		t.Run("SUPER_ADMIN lolos otorisasi pada "+tc.method+" "+tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer "+superAdminToken)
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("Gagal eksekusi request: %v", err)
+			}
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				t.Errorf("SUPER_ADMIN tidak boleh ditolak (401/403) pada %s %s, dapat: %d", tc.method, tc.path, resp.StatusCode)
+			}
+		})
+	}
 }
 
 func TestRouter_RateLimiting(t *testing.T) {

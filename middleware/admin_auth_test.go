@@ -212,3 +212,54 @@ func TestRequireAdminAuth_PetugasRoleWithAllowedRoles(t *testing.T) {
 		t.Errorf("Expected admin_role PETUGAS, got: %v", dataMap["admin_role"])
 	}
 }
+
+func TestRequireAdminAuth_SuperAdminAccessAndSegregation(t *testing.T) {
+	superToken, err := utils.GenerateUserToken("staff-super-1", "superadmin@symphoniatic.id", "SUPER_ADMIN")
+	if err != nil {
+		t.Fatalf("Gagal membuat token SUPER_ADMIN: %v", err)
+	}
+	adminToken, err := utils.GenerateUserToken("admin-1", "admin@symphoniatic.id", "ADMIN")
+	if err != nil {
+		t.Fatalf("Gagal membuat token ADMIN: %v", err)
+	}
+	petugasToken, err := utils.GenerateUserToken("petugas-1", "petugas@symphoniatic.id", "PETUGAS")
+	if err != nil {
+		t.Fatalf("Gagal membuat token PETUGAS: %v", err)
+	}
+
+	t.Run("SUPER_ADMIN dapat mengakses rute default ADMIN maupun rute eksklusif SUPER_ADMIN", func(t *testing.T) {
+		for _, roles := range [][]string{nil, {"ADMIN"}, {"ADMIN", "PETUGAS"}, {"SUPER_ADMIN"}} {
+			app := setupTestApp(roles...)
+			req := httptest.NewRequest(http.MethodGet, "/admin/test-resource", nil)
+			req.Header.Set("Authorization", "Bearer "+superToken)
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("Gagal eksekusi test request: %v", err)
+			}
+			if resp.StatusCode != fiber.StatusOK {
+				t.Errorf("Expected status 200 OK for SUPER_ADMIN on roles %v, got: %d", roles, resp.StatusCode)
+			}
+		}
+	})
+
+	t.Run("ADMIN dan PETUGAS ditolak 403 pada rute eksklusif SUPER_ADMIN", func(t *testing.T) {
+		appSuperOnly := setupTestApp("SUPER_ADMIN")
+		for _, tc := range []struct {
+			name  string
+			token string
+		}{
+			{"ADMIN", adminToken},
+			{"PETUGAS", petugasToken},
+		} {
+			req := httptest.NewRequest(http.MethodGet, "/admin/test-resource", nil)
+			req.Header.Set("Authorization", "Bearer "+tc.token)
+			resp, err := appSuperOnly.Test(req)
+			if err != nil {
+				t.Fatalf("Gagal eksekusi test request: %v", err)
+			}
+			if resp.StatusCode != fiber.StatusForbidden {
+				t.Errorf("Expected 403 Forbidden for %s on SUPER_ADMIN route, got: %d", tc.name, resp.StatusCode)
+			}
+		}
+	})
+}

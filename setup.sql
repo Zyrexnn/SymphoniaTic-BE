@@ -168,6 +168,37 @@ CREATE TABLE IF NOT EXISTS user_promo_usages (
 CREATE INDEX IF NOT EXISTS idx_promotions_code_upper ON promotions(UPPER(code));
 CREATE INDEX IF NOT EXISTS idx_user_promo_usages_user ON user_promo_usages(user_id);
 
+CREATE TABLE IF NOT EXISTS admin_users (
+    id VARCHAR(64) PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL DEFAULT 'ADMIN',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_users_username_lower ON admin_users(LOWER(username));
+CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id VARCHAR(64) PRIMARY KEY,
+    actor_id VARCHAR(64) NOT NULL,
+    actor_name VARCHAR(100) NOT NULL,
+    actor_role VARCHAR(30) NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    target_resource VARCHAR(150) NOT NULL,
+    details TEXT DEFAULT '',
+    ip_address VARCHAR(45) DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_role ON audit_logs(actor_role);
+
 INSERT INTO promotions (id, code, description, discount_type, discount_value, min_order_amount, max_discount_amount, is_member_only, is_active, quota, remaining_quota, valid_from, valid_until)
 VALUES
     ('promo-symphonia-10', 'SYMPHONIA10', 'Diskon Anggota 10% (maksimal potongan Rp 50.000)', 'PERCENTAGE', 10, 100000, 50000, TRUE, TRUE, 500, 500, NOW() - INTERVAL '1 day', NOW() + INTERVAL '365 days'),

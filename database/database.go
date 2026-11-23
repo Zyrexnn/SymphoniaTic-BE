@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -226,6 +227,37 @@ func initSchema() {
 
 	CREATE INDEX IF NOT EXISTS idx_promotions_code_upper ON promotions(UPPER(code));
 	CREATE INDEX IF NOT EXISTS idx_user_promo_usages_user ON user_promo_usages(user_id);
+
+	CREATE TABLE IF NOT EXISTS admin_users (
+		id VARCHAR(64) PRIMARY KEY,
+		username VARCHAR(50) UNIQUE NOT NULL,
+		name VARCHAR(100) NOT NULL,
+		email VARCHAR(100) UNIQUE NOT NULL,
+		password_hash VARCHAR(255) NOT NULL,
+		role VARCHAR(30) NOT NULL DEFAULT 'ADMIN',
+		is_active BOOLEAN DEFAULT TRUE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_admin_users_username_lower ON admin_users(LOWER(username));
+	CREATE INDEX IF NOT EXISTS idx_admin_users_role ON admin_users(role);
+
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id VARCHAR(64) PRIMARY KEY,
+		actor_id VARCHAR(64) NOT NULL,
+		actor_name VARCHAR(100) NOT NULL,
+		actor_role VARCHAR(30) NOT NULL,
+		action VARCHAR(100) NOT NULL,
+		target_resource VARCHAR(150) NOT NULL,
+		details TEXT DEFAULT '',
+		ip_address VARCHAR(45) DEFAULT '',
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+	CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_role ON audit_logs(actor_role);
 	`
 
 	_, err := DB.Exec(schemaQuery)
@@ -233,10 +265,78 @@ func initSchema() {
 		log.Fatalf("Gagal inisialisasi skema tabel PostgreSQL: %v", err)
 	}
 
-	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps, promotions) siap")
+	log.Println("Skema database PostgreSQL (events, ticket_categories, orders, seats, users, auth_otps, promotions, admin_users, audit_logs) siap")
 	seedInitialData()
 	ensurePromotionsSeeded()
+	ensureAdminUsersSeeded()
 	ensureEventSeatsInitialized()
+}
+
+func ensureAdminUsersSeeded() {
+	var count int
+	if err := DB.QueryRow("SELECT COUNT(*) FROM admin_users").Scan(&count); err == nil && count > 0 {
+		// Tetap pastikan akun superadmin ada jika database lama sudah punya data admin_users tanpa SUPER_ADMIN
+		var superCount int
+		if err := DB.QueryRow("SELECT COUNT(*) FROM admin_users WHERE role = 'SUPER_ADMIN'").Scan(&superCount); err == nil && superCount > 0 {
+			return
+		}
+	}
+
+	superUser := strings.TrimSpace(os.Getenv("SUPER_ADMIN_USERNAME"))
+	if superUser == "" {
+		superUser = "superadmin"
+	}
+	superPass := os.Getenv("SUPER_ADMIN_PASSWORD")
+	if superPass == "" {
+		superPass = "123"
+	}
+
+	adminUser := strings.TrimSpace(os.Getenv("ADMIN_USERNAME"))
+	if adminUser == "" {
+		adminUser = "admin"
+	}
+	adminPass := os.Getenv("ADMIN_PASSWORD")
+	if adminPass == "" {
+		adminPass = "123"
+	}
+
+	petugasUser := strings.TrimSpace(os.Getenv("PETUGAS_USERNAME"))
+	if petugasUser == "" {
+		petugasUser = "petugas"
+	}
+	petugasPass := os.Getenv("PETUGAS_PASSWORD")
+	if petugasPass == "" {
+		petugasPass = "123"
+	}
+
+	seeds := []struct {
+		id       string
+		username string
+		name     string
+		email    string
+		password string
+		role     string
+	}{
+		{"staff-superadmin-1", superUser, "Kepala Penyelenggara (Super Admin)", superUser + "@symphoniatic.id", superPass, "SUPER_ADMIN"},
+		{"staff-admin-1", adminUser, "Administrator Operasional", adminUser + "@symphoniatic.id", adminPass, "ADMIN"},
+		{"staff-petugas-1", petugasUser, "Petugas Gate Utama", petugasUser + "@symphoniatic.id", petugasPass, "PETUGAS"},
+	}
+
+	for _, s := range seeds {
+		hash, err := utils.HashPassword(s.password)
+		if err != nil {
+			log.Printf("Gagal melakukan hash kata sandi seed staf %s: %v", s.username, err)
+			continue
+		}
+		_, err = DB.Exec(`
+			INSERT INTO admin_users (id, username, name, email, password_hash, role, is_active, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW(), NOW())
+			ON CONFLICT (username) DO NOTHING
+		`, s.id, strings.ToLower(s.username), s.name, strings.ToLower(s.email), hash, s.role)
+		if err != nil {
+			log.Printf("Gagal melakukan seeding akun staf %s: %v", s.username, err)
+		}
+	}
 }
 
 func ensurePromotionsSeeded() {
