@@ -496,3 +496,109 @@ func (r *refundRepository) SubmitDirectUserRefund(ctx context.Context, order *mo
 		UpdatedAt:     now,
 	}, nil
 }
+
+func (r *refundRepository) BatchRefundByEventID(ctx context.Context, eventID string) (*models.BatchRefundResult, []models.OrderRecord, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("gagal memulai transaksi batch refund: %w", err)
+	}
+	defer tx.Rollback()
+
+	var eventStatus string
+	err = tx.QueryRowContext(ctx, "SELECT COALESCE(status, 'SCHEDULED') FROM events WHERE id = $1 FOR UPDATE", eventID).Scan(&eventStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil, ErrNotFound
+		}
+		return nil, nil, fmt.Errorf("gagal memeriksa status konser: %w", err)
+	}
+	if !strings.EqualFold(eventStatus, "CANCELLED") {
+		return nil, nil, fmt.Errorf("batch refund hanya dapat dijalankan untuk konser yang sudah dibatalkan")
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, order_code, user_email, user_name, total_price, status, COALESCE(checked_in_seats, '')
+		FROM orders
+		WHERE event_id = $1
+		FOR UPDATE
+	`, eventID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("gagal mengambil daftar pesanan konser: %w", err)
+	}
+	defer rows.Close()
+
+	type orderCandidate struct {
+		id             string
+		orderCode      string
+		userEmail      string
+		userName       string
+		totalPrice     float64
+		status         string
+		checkedInSeats string
+	}
+
+	var candidates []orderCandidate
+	for rows.Next() {
+		var c orderCandidate
+		if err := rows.Scan(&c.id, &c.orderCode, &c.userEmail, &c.userName, &c.totalPrice, &c.status, &c.checkedInSeats); err != nil {
+			return nil, nil, fmt.Errorf("gagal membaca data pesanan: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("kesalahan iterasi pesanan: %w", err)
+	}
+
+	result := &models.BatchRefundResult{EventID: eventID}
+	processedOrders := make([]models.OrderRecord, 0)
+	now := time.Now()
+
+	for _, c := range candidates {
+		norm := strings.ToUpper(strings.TrimSpace(c.status))
+		if (norm != "ISSUED" && norm != "VERIFIED" && norm != "REMINDED") || strings.TrimSpace(c.checkedInSeats) != "" {
+			result.SkippedCount++
+			continue
+		}
+
+		var existingID string
+		err := tx.QueryRowContext(ctx, "SELECT id FROM refund_requests WHERE order_id = $1 LIMIT 1", c.id).Scan(&existingID)
+		if err == nil && existingID != "" {
+			result.SkippedCount++
+			continue
+		}
+
+		refundID := "ref-" + uuid.NewString()[:8]
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO refund_requests (
+				id, order_id, order_code, user_email, bank_name, account_number, account_holder,
+				reason, refund_amount, status, admin_note, created_at, updated_at
+			) VALUES ($1, $2, $3, $4, 'TRANSFER_BANK', '-', $5, $6, $7, 'APPROVED', $8, $9, $9)
+		`, refundID, c.id, c.orderCode, c.userEmail, c.userName, "Pembatalan konser oleh penyelenggara", c.totalPrice, "Batch refund otomatis pembatalan konser", now); err != nil {
+			return nil, nil, fmt.Errorf("gagal membuat catatan batch refund untuk %s: %w", c.orderCode, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, "UPDATE orders SET status = 'REFUNDED' WHERE id = $1", c.id); err != nil {
+			return nil, nil, fmt.Errorf("gagal memperbarui status order %s menjadi REFUNDED: %w", c.orderCode, err)
+		}
+
+		if _, err := tx.ExecContext(ctx, "UPDATE seats SET status = 'AVAILABLE', order_id = NULL WHERE order_id = $1", c.id); err != nil {
+			return nil, nil, fmt.Errorf("gagal membebaskan kursi order %s: %w", c.orderCode, err)
+		}
+
+		result.ProcessedCount++
+		result.TotalRefundAmount += c.totalPrice
+		processedOrders = append(processedOrders, models.OrderRecord{
+			ID:         c.id,
+			OrderCode:  c.orderCode,
+			UserEmail:  c.userEmail,
+			UserName:   c.userName,
+			TotalPrice: c.totalPrice,
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("gagal menyimpan transaksi batch refund: %w", err)
+	}
+
+	return result, processedOrders, nil
+}

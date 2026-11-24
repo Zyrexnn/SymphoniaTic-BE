@@ -52,13 +52,18 @@ func validateOrderRefundEligibility(targetOrder *models.OrderRecord) (int, strin
 		return fiber.StatusBadRequest, "Status tiket tidak memenuhi syarat untuk pengajuan refund"
 	}
 
-	if concertDt, err := utils.ParseConcertDateTime(targetOrder.Date, targetOrder.EventTime); err == nil && !concertDt.IsZero() {
-		now := time.Now()
-		if now.After(concertDt) {
-			return fiber.StatusBadRequest, "Pengajuan refund tidak dapat dilakukan karena acara konser telah dimulai atau selesai"
-		}
-		if time.Until(concertDt) < 24*time.Hour {
-			return fiber.StatusBadRequest, "Pengajuan refund ditutup maksimal 24 jam sebelum jadwal konser dimulai"
+	isEventDisrupted := strings.EqualFold(strings.TrimSpace(targetOrder.EventStatus), "CANCELLED") ||
+		strings.EqualFold(strings.TrimSpace(targetOrder.EventStatus), "RESCHEDULED")
+
+	if !isEventDisrupted {
+		if concertDt, err := utils.ParseConcertDateTime(targetOrder.Date, targetOrder.EventTime); err == nil && !concertDt.IsZero() {
+			now := time.Now()
+			if now.After(concertDt) {
+				return fiber.StatusBadRequest, "Pengajuan refund tidak dapat dilakukan karena acara konser telah dimulai atau selesai"
+			}
+			if time.Until(concertDt) < 24*time.Hour {
+				return fiber.StatusBadRequest, "Pengajuan refund ditutup maksimal 24 jam sebelum jadwal konser dimulai"
+			}
 		}
 	}
 
@@ -475,4 +480,34 @@ func (c *RefundController) SubmitUserRefund(ctx *fiber.Ctx) error {
 	}
 
 	return utils.ResponseCreated(ctx, "Pengajuan refund berhasil dikirim tanpa OTP tambahan. Tim kami akan memproses pengembalian dana Anda.", refundRecord)
+}
+
+func (c *RefundController) AdminBatchRefundByEvent(ctx *fiber.Ctx) error {
+	eventID := strings.TrimSpace(ctx.Params("id"))
+	if eventID == "" {
+		return utils.ResponseBadRequest(ctx, "ID konser wajib diisi")
+	}
+
+	result, processedOrders, err := c.repo.BatchRefundByEventID(ctx.Context(), eventID)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return utils.ResponseNotFound(ctx, "Konser tidak ditemukan")
+		}
+		if strings.Contains(err.Error(), "dibatalkan") {
+			return utils.ResponseBadRequest(ctx, err.Error())
+		}
+		return utils.ResponseInternalError(ctx, "Gagal memproses batch refund konser", err)
+	}
+
+	for _, ord := range processedOrders {
+		services.SendRefundStatusNotificationEmail(
+			ord.UserEmail,
+			ord.OrderCode,
+			"APPROVED",
+			"Batch refund otomatis pembatalan konser",
+			ord.TotalPrice,
+		)
+	}
+
+	return utils.ResponseOK(ctx, "Batch refund massal berhasil diproses", result)
 }
