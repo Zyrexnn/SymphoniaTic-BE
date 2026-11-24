@@ -93,6 +93,12 @@ func setupRouterWithStaff(
 	if activePromoRepo == nil {
 		activePromoRepo = &repositories.MockPromoRepository{}
 	}
+	var activeBroadcastRepo repositories.BroadcastRepository = &repositories.MockBroadcastRepository{}
+	if database.DB != nil {
+		activeBroadcastRepo = repositories.NewBroadcastRepository(database.DB)
+	}
+	eventCtrl.SetBroadcastRepo(activeBroadcastRepo)
+	broadcastCtrl := controllers.NewBroadcastController(activeBroadcastRepo, eventRepo)
 	promoCtrl := controllers.NewPromoController(activePromoRepo)
 
 	var activeSecRepo repositories.SecurityRepository = &repositories.MockSecurityRepository{}
@@ -201,6 +207,9 @@ func setupRouterWithStaff(
 	admin.Post("/events", requireAdminOnly, eventCtrl.CreateEvent)
 	admin.Put("/events/:id", requireAdminOnly, eventCtrl.UpdateEvent)
 	admin.Patch("/events/:id/toggle-close", requireAdminOnly, eventCtrl.ToggleEventClose)
+	admin.Post("/events/:id/cancel", requireAdminOnly, eventCtrl.CancelEvent)
+	admin.Post("/events/:id/reschedule", requireAdminOnly, eventCtrl.RescheduleEvent)
+	admin.Post("/events/:id/batch-refund", requireAdminOnly, refundCtrl.AdminBatchRefundByEvent)
 	admin.Delete("/events/:id", requireAdminOnly, eventCtrl.DeleteEvent)
 
 	admin.Post("/events/:id/categories", requireAdminOnly, categoryCtrl.CreateTicketCategory)
@@ -220,6 +229,14 @@ func setupRouterWithStaff(
 	admin.Put("/promos/:id", requireAdminOnly, promoCtrl.AdminUpdatePromo)
 	admin.Patch("/promos/:id/toggle-active", requireAdminOnly, promoCtrl.AdminTogglePromoActive)
 	admin.Delete("/promos/:id", requireAdminOnly, promoCtrl.AdminDeletePromo)
+
+	admin.Get("/broadcasts", requireAdminOnly, broadcastCtrl.GetAllBroadcasts)
+	admin.Post("/broadcasts", requireAdminOnly, broadcastCtrl.CreateBroadcast)
+	admin.Get("/broadcasts/:id/recipients", requireAdminOnly, broadcastCtrl.GetBroadcastRecipients)
+	admin.Post("/broadcasts/:id/retry", requireAdminOnly, broadcastCtrl.RetryFailedBroadcast)
+
+	api.Get("/unsubscribe", broadcastCtrl.UnsubscribePromo)
+	api.Post("/unsubscribe", broadcastCtrl.UnsubscribePromo)
 
 	return app
 }
@@ -243,6 +260,8 @@ func main() {
 	database.ConnectDBWithConfig(&cfg.Database)
 
 	services.InitMailerWorkerPool(&cfg.SMTP, 5, 200)
+	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
+	services.StartEventCompletionScheduler(schedulerCtx, database.DB, 15*time.Minute)
 
 	eventRepo := repositories.NewEventRepository(database.DB)
 	orderRepo := repositories.NewOrderRepository(database.DB)
@@ -261,6 +280,7 @@ func main() {
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		<-sigChan
 		log.Println("Menerima sinyal terminasi, menghentikan server secara graceful...")
+		stopScheduler()
 		if err := app.Shutdown(); err != nil {
 			log.Printf("Gagal menghentikan server Fiber: %v", err)
 		}
