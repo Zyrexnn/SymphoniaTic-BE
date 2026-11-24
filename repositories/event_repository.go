@@ -43,6 +43,12 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 			COALESCE(rundown, '[]'::jsonb), 
 			COALESCE(description, ''), 
 			COALESCE(is_closed, FALSE),
+			COALESCE(status, 'SCHEDULED'),
+			COALESCE(cancellation_reason, ''),
+			COALESCE(reschedule_reason, ''),
+			COALESCE(original_date, ''),
+			COALESCE(original_time, ''),
+			status_updated_at,
 			event_date_time,
 			sales_end_at
 		FROM events
@@ -58,6 +64,7 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 	for rows.Next() {
 		var eventItem models.EventItem
 		var rundownBytes []byte
+		var rawStatusUpdatedAt sql.NullTime
 		var rawEventDateTime sql.NullTime
 		var rawSalesEndAt sql.NullTime
 
@@ -80,12 +87,23 @@ func (r *eventRepository) GetAllEvents(ctx context.Context) ([]models.EventItem,
 			&rundownBytes,
 			&eventItem.Description,
 			&eventItem.IsClosed,
+			&eventItem.Status,
+			&eventItem.CancellationReason,
+			&eventItem.RescheduleReason,
+			&eventItem.OriginalDate,
+			&eventItem.OriginalTime,
+			&rawStatusUpdatedAt,
 			&rawEventDateTime,
 			&rawSalesEndAt,
 		); err != nil {
 			return nil, fmt.Errorf("gagal membaca baris data konser: %w", err)
 		}
 		_ = json.Unmarshal(rundownBytes, &eventItem.Rundown)
+
+		if rawStatusUpdatedAt.Valid && !rawStatusUpdatedAt.Time.IsZero() {
+			t := rawStatusUpdatedAt.Time
+			eventItem.StatusUpdatedAt = &t
+		}
 
 		if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
 			t := rawEventDateTime.Time
@@ -131,6 +149,7 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 	var eventItem models.EventItem
 	var rundownBytes []byte
 
+	var rawStatusUpdatedAt sql.NullTime
 	var rawEventDateTime sql.NullTime
 	var rawSalesEndAt sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
@@ -153,6 +172,12 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 			COALESCE(rundown, '[]'::jsonb), 
 			COALESCE(description, ''), 
 			COALESCE(is_closed, FALSE),
+			COALESCE(status, 'SCHEDULED'),
+			COALESCE(cancellation_reason, ''),
+			COALESCE(reschedule_reason, ''),
+			COALESCE(original_date, ''),
+			COALESCE(original_time, ''),
+			status_updated_at,
 			event_date_time,
 			sales_end_at
 		FROM events
@@ -176,6 +201,12 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 		&rundownBytes,
 		&eventItem.Description,
 		&eventItem.IsClosed,
+		&eventItem.Status,
+		&eventItem.CancellationReason,
+		&eventItem.RescheduleReason,
+		&eventItem.OriginalDate,
+		&eventItem.OriginalTime,
+		&rawStatusUpdatedAt,
 		&rawEventDateTime,
 		&rawSalesEndAt,
 	)
@@ -188,6 +219,11 @@ func (r *eventRepository) GetEventByID(ctx context.Context, id string) (*models.
 	}
 
 	_ = json.Unmarshal(rundownBytes, &eventItem.Rundown)
+
+	if rawStatusUpdatedAt.Valid && !rawStatusUpdatedAt.Time.IsZero() {
+		t := rawStatusUpdatedAt.Time
+		eventItem.StatusUpdatedAt = &t
+	}
 
 	now := time.Now()
 	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
@@ -390,12 +426,17 @@ func (r *eventRepository) DeleteEvent(ctx context.Context, id string) error {
 
 func (r *eventRepository) ToggleEventClose(ctx context.Context, id string) (bool, error) {
 	var isClosed bool
-	err := r.db.QueryRowContext(ctx, "SELECT is_closed FROM events WHERE id = $1", id).Scan(&isClosed)
+	var status string
+	err := r.db.QueryRowContext(ctx, "SELECT is_closed, COALESCE(status, 'SCHEDULED') FROM events WHERE id = $1", id).Scan(&isClosed, &status)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, ErrNotFound
 		}
 		return false, fmt.Errorf("gagal memeriksa status penutupan konser: %w", err)
+	}
+
+	if strings.EqualFold(status, "CANCELLED") {
+		return false, ErrEventCancelled
 	}
 
 	newState := !isClosed
@@ -405,6 +446,113 @@ func (r *eventRepository) ToggleEventClose(ctx context.Context, id string) (bool
 	}
 
 	return newState, nil
+}
+
+func (r *eventRepository) CancelEvent(ctx context.Context, id string, reason string) (*models.EventItem, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memulai transaksi pembatalan konser: %w", err)
+	}
+	defer tx.Rollback()
+
+	var currentStatus string
+	err = tx.QueryRowContext(ctx, "SELECT COALESCE(status, 'SCHEDULED') FROM events WHERE id = $1 FOR UPDATE", id).Scan(&currentStatus)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("gagal memeriksa status konser: %w", err)
+	}
+
+	if strings.EqualFold(currentStatus, "CANCELLED") {
+		return nil, ErrEventAlreadyCancelled
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE events
+		SET status = 'CANCELLED',
+		    is_closed = TRUE,
+		    cancellation_reason = $2,
+		    status_updated_at = NOW()
+		WHERE id = $1
+	`, id, strings.TrimSpace(reason))
+	if err != nil {
+		return nil, fmt.Errorf("gagal memperbarui status pembatalan konser: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("gagal menyimpan pembatalan konser: %w", err)
+	}
+
+	return r.GetEventByID(ctx, id)
+}
+
+func (r *eventRepository) RescheduleEvent(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gagal memulai transaksi pengunduran jadwal konser: %w", err)
+	}
+	defer tx.Rollback()
+
+	var currentStatus, currentDate, currentTime, currentOpenGate string
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(status, 'SCHEDULED'), COALESCE(date, ''), COALESCE(time, ''), COALESCE(open_gate, '')
+		FROM events WHERE id = $1 FOR UPDATE
+	`, id).Scan(&currentStatus, &currentDate, &currentTime, &currentOpenGate)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("gagal memeriksa data konser: %w", err)
+	}
+
+	if strings.EqualFold(currentStatus, "CANCELLED") {
+		return nil, ErrEventCancelled
+	}
+
+	newDate := strings.TrimSpace(req.NewDate)
+	newTime := strings.TrimSpace(req.NewTime)
+	newOpenGate := strings.TrimSpace(req.NewOpenGate)
+	if newOpenGate == "" {
+		newOpenGate = currentOpenGate
+	}
+
+	var parsedDT interface{}
+	if dt, err := utils.ParseConcertDateTime(newDate, newTime); err == nil && !dt.IsZero() {
+		parsedDT = dt
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE events
+		SET original_date = CASE WHEN COALESCE(original_date, '') = '' THEN $2 ELSE original_date END,
+		    original_time = CASE WHEN COALESCE(original_time, '') = '' THEN $3 ELSE original_time END,
+		    date = $4,
+		    time = $5,
+		    open_gate = $6,
+		    event_date_time = COALESCE($7, event_date_time),
+		    reschedule_reason = $8,
+		    status = 'RESCHEDULED',
+		    status_updated_at = NOW()
+		WHERE id = $1
+	`, id, currentDate, currentTime, newDate, newTime, newOpenGate, parsedDT, strings.TrimSpace(req.Reason))
+	if err != nil {
+		return nil, fmt.Errorf("gagal menyimpan jadwal baru konser: %w", err)
+	}
+
+	// Sinkronkan tanggal baru pada pesanan aktif agar E-Ticket dan pencarian tiket tetap akurat
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE orders
+		SET date = $2
+		WHERE event_id = $1 AND status IN ('ISSUED', 'VERIFIED', 'REMINDED')
+	`, id, newDate); err != nil {
+		return nil, fmt.Errorf("gagal menyinkronkan jadwal baru pada tiket pesanan: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("gagal menyimpan perubahan jadwal konser: %w", err)
+	}
+
+	return r.GetEventByID(ctx, id)
 }
 
 func insertSeatsTx(ctx context.Context, tx *sql.Tx, seats []models.SeatItem) error {

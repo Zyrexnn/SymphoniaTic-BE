@@ -138,6 +138,12 @@ func (c *TicketController) CheckInTicket(ctx *fiber.Ctx) error {
 				Message: "Status tiket tidak valid untuk check-in",
 			})
 		}
+		if errors.Is(err, repositories.ErrEventCancelled) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Check-in ditolak: acara konser ini telah dibatalkan oleh penyelenggara",
+			})
+		}
 		if errors.Is(err, repositories.ErrEventClosed) {
 			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 				Success: false,

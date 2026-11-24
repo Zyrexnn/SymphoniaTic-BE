@@ -1,22 +1,31 @@
 package controllers
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
 	"github.com/Zyrexnn/SymphoniaTic-be/repositories"
+	"github.com/Zyrexnn/SymphoniaTic-be/services"
 	"github.com/Zyrexnn/SymphoniaTic-be/utils"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 )
 
 type EventController struct {
-	repo repositories.EventRepository
+	repo          repositories.EventRepository
+	broadcastRepo repositories.BroadcastRepository
 }
 
 func NewEventController(repo repositories.EventRepository) *EventController {
 	return &EventController{repo: repo}
+}
+
+func (c *EventController) SetBroadcastRepo(b repositories.BroadcastRepository) {
+	c.broadcastRepo = b
 }
 
 // GetEvents godoc
@@ -275,6 +284,12 @@ func (c *EventController) ToggleEventClose(ctx *fiber.Ctx) error {
 				Message: "Konser tidak ditemukan",
 			})
 		}
+		if errors.Is(err, repositories.ErrEventCancelled) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser yang sudah dibatalkan tidak dapat dibuka kembali",
+			})
+		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
 			Message: "Gagal mengecek status konser",
@@ -294,5 +309,175 @@ func (c *EventController) ToggleEventClose(ctx *fiber.Ctx) error {
 			"eventId":  eventID,
 			"isClosed": newClosedState,
 		},
+	})
+}
+
+func (c *EventController) CancelEvent(ctx *fiber.Ctx) error {
+	eventID := ctx.Params("id")
+	var req models.CancelEventRequest
+	if err := ctx.BodyParser(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format data pembatalan konser tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Alasan pembatalan konser wajib diisi",
+		})
+	}
+
+	updatedEvent, err := c.repo.CancelEvent(ctx.Context(), eventID, req.Reason)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ctx.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser tidak ditemukan",
+			})
+		}
+		if errors.Is(err, repositories.ErrEventAlreadyCancelled) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser ini sudah berstatus dibatalkan sebelumnya",
+			})
+		}
+		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal membatalkan konser",
+			Error:   err.Error(),
+		})
+	}
+
+	if req.NotifyAttendees && c.broadcastRepo != nil && updatedEvent != nil {
+		createdBy, _ := ctx.Locals("admin_username").(string)
+		if strings.TrimSpace(createdBy) == "" {
+			createdBy = "admin"
+		}
+		c.dispatchEventLifecycleBroadcast(ctx.Context(), updatedEvent, "EVENT_CANCELLED",
+			fmt.Sprintf("Pemberitahuan Pembatalan Konser: %s", updatedEvent.Title),
+			fmt.Sprintf("Konser %s Dibatalkan", updatedEvent.Title),
+			fmt.Sprintf("Halo {{name}},\n\nDengan berat hati kami informasikan bahwa konser \"%s\" (%s) telah dibatalkan.\n\nAlasan pembatalan:\n%s\n\nAnda berhak mengajukan refund penuh untuk pesanan {{orderCode}} tanpa batas waktu 24 jam melalui halaman Refund kami.", updatedEvent.Title, updatedEvent.Date, req.Reason),
+			"Ajukan Refund Tiket", "/refund", createdBy)
+	}
+
+	return ctx.JSON(models.APIResponse{
+		Success: true,
+		Message: "Konser berhasil dibatalkan dan penjualan tiket telah ditutup",
+		Data:    updatedEvent,
+	})
+}
+
+func (c *EventController) RescheduleEvent(ctx *fiber.Ctx) error {
+	eventID := ctx.Params("id")
+	var req models.RescheduleEventRequest
+	if err := ctx.BodyParser(&req); err != nil {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Format data pengunduran jadwal konser tidak valid",
+			Error:   err.Error(),
+		})
+	}
+
+	req.NewDate = strings.TrimSpace(req.NewDate)
+	req.NewTime = strings.TrimSpace(req.NewTime)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.NewDate == "" || req.NewTime == "" || req.Reason == "" {
+		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+			Success: false,
+			Message: "Tanggal baru, waktu baru, dan alasan pengunduran jadwal wajib diisi",
+		})
+	}
+
+	updatedEvent, err := c.repo.RescheduleEvent(ctx.Context(), eventID, &req)
+	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ctx.Status(fiber.StatusNotFound).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser tidak ditemukan",
+			})
+		}
+		if errors.Is(err, repositories.ErrEventCancelled) {
+			return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
+				Success: false,
+				Message: "Konser yang sudah dibatalkan tidak dapat dijadwalkan ulang",
+			})
+		}
+		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
+			Success: false,
+			Message: "Gagal menjadwalkan ulang konser",
+			Error:   err.Error(),
+		})
+	}
+
+	if req.NotifyAttendees && c.broadcastRepo != nil && updatedEvent != nil {
+		createdBy, _ := ctx.Locals("admin_username").(string)
+		if strings.TrimSpace(createdBy) == "" {
+			createdBy = "admin"
+		}
+		c.dispatchEventLifecycleBroadcast(ctx.Context(), updatedEvent, "EVENT_RESCHEDULED",
+			fmt.Sprintf("Perubahan Jadwal Konser: %s", updatedEvent.Title),
+			fmt.Sprintf("Jadwal Baru Konser %s", updatedEvent.Title),
+			fmt.Sprintf("Halo {{name}},\n\nJadwal konser \"%s\" mengalami penyesuaian:\n- Jadwal Baru: %s pukul %s\n- Alasan: %s\n\nTiket dengan kode {{orderCode}} tetap berlaku untuk jadwal baru. Apabila berhalangan hadir, Anda dapat mengajukan refund melalui halaman Refund kami.", updatedEvent.Title, updatedEvent.Date, updatedEvent.Time, req.Reason),
+			"Lihat Tiket / Ajukan Refund", "/refund", createdBy)
+	}
+
+	return ctx.JSON(models.APIResponse{
+		Success: true,
+		Message: "Jadwal konser berhasil diperbarui",
+		Data:    updatedEvent,
+	})
+}
+
+func (c *EventController) dispatchEventLifecycleBroadcast(ctx context.Context, evt *models.EventItem, category, subject, headline, bodyText, ctaLabel, ctaURL, createdBy string) {
+	recipients, err := c.broadcastRepo.ResolveRecipients(ctx, "EVENT_ATTENDEES", evt.ID)
+	if err != nil || len(recipients) == 0 {
+		return
+	}
+
+	bcastID := "bcast-" + uuid.NewString()[:8]
+	req := models.CreateBroadcastRequest{
+		TargetScope:   "EVENT_ATTENDEES",
+		TargetEventID: evt.ID,
+		Category:      category,
+		Subject:       subject,
+		Headline:      headline,
+		BodyText:      bodyText,
+		CTALabel:      ctaLabel,
+		CTAURL:        ctaURL,
+	}
+
+	record := &models.EmailBroadcastRecord{
+		ID:              bcastID,
+		TargetScope:     req.TargetScope,
+		TargetEventID:   evt.ID,
+		TargetEventName: evt.Title,
+		Category:        category,
+		Subject:         subject,
+		Headline:        headline,
+		BodyText:        bodyText,
+		CTALabel:        ctaLabel,
+		CTAURL:          ctaURL,
+		TotalRecipients: len(recipients),
+		Status:          "PROCESSING",
+		CreatedBy:       createdBy,
+		CreatedAt:       time.Now(),
+	}
+
+	if err := c.broadcastRepo.CreateBroadcast(ctx, record); err != nil {
+		return
+	}
+
+	services.SendBroadcastBatchAsync(req, evt.Title, recipients, func(sent, failed int) {
+		finalStatus := "COMPLETED"
+		if sent == 0 && failed > 0 {
+			finalStatus = "FAILED"
+		} else if failed > 0 {
+			finalStatus = "PARTIAL_FAILED"
+		}
+		_ = c.broadcastRepo.UpdateBroadcastProgress(context.Background(), bcastID, sent, failed, finalStatus)
 	})
 }

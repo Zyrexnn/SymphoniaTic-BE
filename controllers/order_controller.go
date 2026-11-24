@@ -79,6 +79,9 @@ func (c *OrderController) CreateOrder(ctx *fiber.Ctx) error {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return utils.ResponseNotFound(ctx, "Kategori tiket tidak ditemukan")
 		}
+		if errors.Is(err, repositories.ErrEventCancelled) {
+			return utils.ResponseBadRequest(ctx, "Pembelian tiket ditolak karena acara konser ini telah dibatalkan oleh penyelenggara.")
+		}
 		if errors.Is(err, repositories.ErrEventClosed) {
 			return utils.ResponseBadRequest(ctx, "Penjualan tiket untuk pertunjukan ini telah ditutup karena konser sudah dimulai.")
 		}

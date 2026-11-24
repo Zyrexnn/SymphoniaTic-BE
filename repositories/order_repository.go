@@ -36,15 +36,15 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		_ = tx.QueryRowContext(ctx, "SELECT event_id FROM ticket_categories WHERE id = $1", req.TicketCategoryID).Scan(&req.EventID)
 	}
 
-	var evtTitle, evtArtist, evtVenue, evtDate, evtTime, evtOpenGate, evtAddress string
+	var evtTitle, evtArtist, evtVenue, evtDate, evtTime, evtOpenGate, evtAddress, evtStatus string
 	var evtClosed bool
 	var rawEventDateTime sql.NullTime
 	var rawSalesEndAt sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed, event_date_time, sales_end_at
+		SELECT title, artist, venue, date, time, COALESCE(open_gate, ''), COALESCE(address, ''), is_closed, COALESCE(status, 'SCHEDULED'), event_date_time, sales_end_at
 		FROM events
 		WHERE id = $1
-	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed, &rawEventDateTime, &rawSalesEndAt)
+	`, req.EventID).Scan(&evtTitle, &evtArtist, &evtVenue, &evtDate, &evtTime, &evtOpenGate, &evtAddress, &evtClosed, &evtStatus, &rawEventDateTime, &rawSalesEndAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -52,8 +52,13 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 		return nil, fmt.Errorf("gagal mengambil data konser: %w", err)
 	}
 
+	if strings.EqualFold(evtStatus, "CANCELLED") {
+		return nil, ErrEventCancelled
+	}
+
 	evalEvent := models.EventItem{
 		IsClosed: evtClosed,
+		Status:   evtStatus,
 	}
 	if rawEventDateTime.Valid && !rawEventDateTime.Time.IsZero() {
 		t := rawEventDateTime.Time
@@ -345,7 +350,7 @@ func (r *orderRepository) CreateOrder(ctx context.Context, req *models.CreateOrd
 }
 
 const orderWithEventSelect = `
-	SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+	SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, COALESCE(e.status, 'SCHEDULED'), o.event_title, o.artist, o.venue, o.date,
 	       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
 	       o.category_name, o.quantity, o.total_price, COALESCE(o.promo_code, ''), COALESCE(o.discount_amount, 0), o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 	       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
@@ -361,7 +366,7 @@ type rowScanner interface {
 func scanOrderWithEvent(scanner rowScanner) (models.OrderRecord, error) {
 	var record models.OrderRecord
 	err := scanner.Scan(
-		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventTitle,
+		&record.ID, &record.OrderCode, &record.UserID, &record.EventID, &record.EventStatus, &record.EventTitle,
 		&record.Artist, &record.Venue, &record.Date, &record.OpenGate, &record.EventTime, &record.VenueAddress,
 		&record.CategoryName, &record.Quantity, &record.TotalPrice, &record.PromoCode, &record.DiscountAmount, &record.UserName, &record.UserEmail,
 		&record.QRCode, &record.SeatNumbers, &record.AttendeeNames, &record.CheckedInSeats, &record.Status,
@@ -442,7 +447,7 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 	// Penguncian baris FOR UPDATE OF o memastikan atomisitas status tiket tanpa mengunci baris tabel events yang dapat menimbulkan lock contention
 	var record models.OrderRecord
 	var evtClosed bool
-	var evtOpenGate, evtTime string
+	var evtOpenGate, evtTime, evtStatus string
 	var rawEventDateTime sql.NullTime
 
 	err = tx.QueryRowContext(ctx, `
@@ -450,7 +455,7 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 		       o.category_name, o.quantity, o.total_price, o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 		       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
 		       COALESCE(o.payment_method, 'SANDBOX_PAYMENT'), o.created_at,
-		       e.is_closed, COALESCE(e.open_gate, ''), COALESCE(e.time, ''), e.event_date_time
+		       e.is_closed, COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.status, 'SCHEDULED'), e.event_date_time
 		FROM orders o
 		JOIN events e ON o.event_id = e.id
 		WHERE LOWER(o.order_code) = LOWER($1) OR ($2 <> '' AND LOWER(o.order_code) = LOWER($2))
@@ -462,13 +467,18 @@ func (r *orderRepository) CheckInTicket(ctx context.Context, orderCode string, b
 		&record.UserName, &record.UserEmail, &record.QRCode, &record.SeatNumbers,
 		&record.AttendeeNames, &record.CheckedInSeats, &record.Status,
 		&record.PaymentMethod, &record.CreatedAt,
-		&evtClosed, &evtOpenGate, &evtTime, &rawEventDateTime,
+		&evtClosed, &evtOpenGate, &evtTime, &evtStatus, &rawEventDateTime,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("gagal memverifikasi data tiket: %w", err)
+	}
+
+	record.EventStatus = evtStatus
+	if strings.EqualFold(evtStatus, "CANCELLED") {
+		return nil, ErrEventCancelled
 	}
 
 	record.OpenGate = evtOpenGate

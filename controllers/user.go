@@ -32,7 +32,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 	orderStatusFilter := strings.TrimSpace(ctx.Query("status"))
 
 	baseQuery := `
-		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, COALESCE(e.status, 'SCHEDULED'), o.event_title, o.artist, o.venue, o.date,
 		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
 		       o.category_name, o.quantity, o.total_price, COALESCE(o.promo_code, ''), COALESCE(o.discount_amount, 0), o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 		       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
@@ -60,7 +60,7 @@ func GetUserOrders(ctx *fiber.Ctx) error {
 	for orderRows.Next() {
 		var orderRecord models.OrderRecord
 		rowScanErr := orderRows.Scan(
-			&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
+			&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventStatus, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
 			&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
 			&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.PromoCode, &orderRecord.DiscountAmount, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers,
 			&orderRecord.AttendeeNames, &orderRecord.CheckedInSeats, &orderRecord.Status,
@@ -98,7 +98,7 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 
 	var orderRecord models.OrderRecord
 	err := database.DB.QueryRow(`
-		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, o.event_title, o.artist, o.venue, o.date,
+		SELECT o.id, o.order_code, COALESCE(o.user_id, ''), o.event_id, COALESCE(e.status, 'SCHEDULED'), o.event_title, o.artist, o.venue, o.date,
 		       COALESCE(e.open_gate, ''), COALESCE(e.time, ''), COALESCE(e.address, ''),
 		       o.category_name, o.quantity, o.total_price, COALESCE(o.promo_code, ''), COALESCE(o.discount_amount, 0), o.user_name, o.user_email, o.qr_code, COALESCE(o.seat_numbers, ''),
 		       COALESCE(o.attendee_names, ''), COALESCE(o.checked_in_seats, ''), o.status,
@@ -107,7 +107,7 @@ func GetUserOrderByCode(ctx *fiber.Ctx) error {
 		LEFT JOIN events e ON o.event_id = e.id
 		WHERE LOWER(o.order_code) = LOWER($1) AND (o.user_id = $2 OR LOWER(o.user_email) = LOWER($3))
 	`, requestedOrderCode, authenticatedUserID, authenticatedUserEmail).Scan(
-		&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
+		&orderRecord.ID, &orderRecord.OrderCode, &orderRecord.UserID, &orderRecord.EventID, &orderRecord.EventStatus, &orderRecord.EventTitle, &orderRecord.Artist, &orderRecord.Venue, &orderRecord.Date,
 		&orderRecord.OpenGate, &orderRecord.EventTime, &orderRecord.VenueAddress,
 		&orderRecord.CategoryName, &orderRecord.Quantity, &orderRecord.TotalPrice, &orderRecord.PromoCode, &orderRecord.DiscountAmount, &orderRecord.UserName, &orderRecord.UserEmail, &orderRecord.QRCode, &orderRecord.SeatNumbers,
 		&orderRecord.AttendeeNames, &orderRecord.CheckedInSeats, &orderRecord.Status,
