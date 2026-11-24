@@ -3,12 +3,14 @@ package services
 import (
 	"encoding/base64"
 	"fmt"
+	"html"
 	"html/template"
 	"log"
 	"net/smtp"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Zyrexnn/SymphoniaTic-be/config"
 	"github.com/Zyrexnn/SymphoniaTic-be/models"
@@ -116,8 +118,25 @@ func enqueueEmail(job EmailJob) {
 	}
 }
 
+// EnqueueEmailSafe memasukkan pekerjaan email ke antrean secara aman tanpa risiko panic bila antrean tertutup
+func EnqueueEmailSafe(job EmailJob) bool {
+	mailerLock.Lock()
+	if isClosed {
+		mailerLock.Unlock()
+		log.Printf("Peringatan: Antrean email telah ditutup, membatalkan pengiriman email ke %s\n", job.To)
+		return false
+	}
+	mailerLock.Unlock()
+	enqueueEmail(job)
+	return true
+}
+
 // sendEmailViaSMTP menyusun payload MIME dan mengirimkan email via protokol SMTP
 func sendEmailViaSMTP(job EmailJob) {
+	_ = sendEmailViaSMTPWithError(job)
+}
+
+func sendEmailViaSMTPWithError(job EmailJob) error {
 	smtpHost := "localhost"
 	smtpPort := "1025"
 	senderEmail := "noreply@symphoniatic.com"
@@ -157,10 +176,14 @@ func sendEmailViaSMTP(job EmailJob) {
 
 	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
 
+	headerSanitizer := strings.NewReplacer("\r", "", "\n", "")
+	cleanTo := headerSanitizer.Replace(strings.TrimSpace(job.To))
+	cleanSubject := headerSanitizer.Replace(strings.TrimSpace(job.Subject))
+
 	headers := make(map[string]string)
 	headers["From"] = fmt.Sprintf("%s <%s>", senderName, senderEmail)
-	headers["To"] = job.To
-	headers["Subject"] = job.Subject
+	headers["To"] = cleanTo
+	headers["Subject"] = cleanSubject
 	headers["MIME-Version"] = "1.0"
 	headers["Content-Type"] = "text/html; charset=UTF-8"
 
@@ -170,12 +193,13 @@ func sendEmailViaSMTP(job EmailJob) {
 	}
 	message.WriteString("\r\n" + job.Body)
 
-	err := emailSender(addr, nil, senderEmail, []string{job.To}, []byte(message.String()))
+	err := emailSender(addr, nil, senderEmail, []string{cleanTo}, []byte(message.String()))
 	if err != nil {
 		log.Printf("[MAILPIT-ERROR] Gagal mengirim email ke %s: %v\n", job.To, err)
 	} else {
 		log.Printf("[MAILPIT-SUCCESS] Email [%s] berhasil dikirim ke %s via %s\n", job.Subject, job.To, addr)
 	}
+	return err
 }
 
 // SendETicketEmail mengirimkan email E-Ticket berformat HTML secara asinkron melalui antrean worker
@@ -360,4 +384,163 @@ func SendAuthOTPEmail(userEmail, userName, otpCode, purpose string) {
 		Subject: subject,
 		Body:    body,
 	})
+}
+
+func replaceBroadcastPlaceholders(raw string, recipient models.BroadcastRecipient, eventTitle string) string {
+	name := strings.TrimSpace(recipient.Name)
+	if name == "" {
+		name = "Penikmat Musik"
+	}
+	r := strings.NewReplacer(
+		"{{name}}", name,
+		"{{email}}", strings.TrimSpace(recipient.Email),
+		"{{orderCode}}", strings.TrimSpace(recipient.OrderCode),
+		"{{eventTitle}}", strings.TrimSpace(eventTitle),
+	)
+	return r.Replace(raw)
+}
+
+// RenderDynamicBroadcastHTML merender email broadcast dinamis dengan HTML escaping ketat
+func RenderDynamicBroadcastHTML(req models.CreateBroadcastRequest, eventTitle string, recipient models.BroadcastRecipient) (string, string) {
+	subject := replaceBroadcastPlaceholders(strings.TrimSpace(req.Subject), recipient, eventTitle)
+	headline := html.EscapeString(replaceBroadcastPlaceholders(strings.TrimSpace(req.Headline), recipient, eventTitle))
+	rawBody := replaceBroadcastPlaceholders(strings.TrimSpace(req.BodyText), recipient, eventTitle)
+	escapedBody := html.EscapeString(rawBody)
+	formattedBody := strings.ReplaceAll(escapedBody, "\n", "<br/>")
+
+	badgeLabel := "PENGUMUMAN"
+	badgeBg := "#D4FF2A"
+	badgeColor := "#141413"
+	switch strings.ToUpper(strings.TrimSpace(req.Category)) {
+	case "PROMO":
+		badgeLabel = "PENAWARAN PROMO"
+	case "EVENT_CANCELLED":
+		badgeLabel = "PEMBATALAN KONSER"
+		badgeBg = "#C81E1E"
+		badgeColor = "#FFFFFF"
+	case "EVENT_RESCHEDULED":
+		badgeLabel = "PERUBAHAN JADWAL"
+		badgeBg = "#8A5A00"
+		badgeColor = "#FFFFFF"
+	}
+
+	promoHTML := ""
+	if code := strings.TrimSpace(req.PromoCode); code != "" {
+		promoHTML = fmt.Sprintf(`
+		<div style="margin:24px 0;padding:16px 20px;background-color:#F4F3EF;border:1px solid #141413;">
+			<div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#52514D;font-weight:700;">KODE PROMO EKSKLUSIF</div>
+			<div style="margin-top:6px;font-size:22px;font-weight:800;letter-spacing:2px;color:#141413;font-family:'JetBrains Mono',ui-monospace,monospace;">%s</div>
+		</div>`, html.EscapeString(strings.ToUpper(code)))
+	}
+
+	ctaHTML := ""
+	if label, url := strings.TrimSpace(req.CTALabel), strings.TrimSpace(req.CTAURL); label != "" && url != "" {
+		if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "/") {
+			ctaHTML = fmt.Sprintf(`
+			<div style="margin-top:28px;">
+				<a href="%s" style="display:inline-block;background-color:#141413;color:#D4FF2A;text-decoration:none;font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;padding:14px 24px;border:1px solid #141413;">%s</a>
+			</div>`, html.EscapeString(url), html.EscapeString(label))
+		}
+	}
+
+	unsubscribeHTML := ""
+	if strings.EqualFold(strings.TrimSpace(req.Category), "PROMO") && strings.TrimSpace(recipient.UnsubscribeToken) != "" {
+		unsubHref := "/unsubscribe?token=" + html.EscapeString(strings.TrimSpace(recipient.UnsubscribeToken))
+		unsubscribeHTML = fmt.Sprintf(`<div style="margin-top:8px;"><a href="%s" style="color:#52514D;text-decoration:underline;">Berhenti berlangganan email promo</a></div>`, unsubHref)
+	}
+
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1.0" /></head>
+<body style="margin:0;padding:24px 12px;background-color:#F4F3EF;font-family:'Plus Jakarta Sans','Archivo',Arial,Helvetica,sans-serif;color:#141413;">
+	<div style="max-width:600px;margin:0 auto;background-color:#FFFFFF;border:1px solid #141413;">
+		<div style="background-color:#141413;padding:22px 28px;border-bottom:1px solid #141413;">
+			<div style="font-size:18px;font-weight:800;letter-spacing:2px;color:#F4F3EF;">SYMPHONIATIC.</div>
+			<div style="margin-top:10px;">
+				<span style="display:inline-block;background-color:%s;color:%s;font-size:11px;font-weight:800;letter-spacing:1.2px;padding:4px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;">%s</span>
+			</div>
+		</div>
+		<div style="padding:28px;">
+			<h1 style="margin:0 0 16px 0;font-size:22px;line-height:1.25;color:#141413;font-weight:800;">%s</h1>
+			<div style="font-size:14px;line-height:1.65;color:#52514D;">%s</div>
+			%s
+			%s
+		</div>
+		<div style="padding:18px 28px;background-color:#F4F3EF;border-top:1px solid #DFDDD6;font-size:11px;color:#6E6D68;">
+			Pesan ini dikirim secara resmi oleh sistem informasi SymphoniaTic.
+			%s
+		</div>
+	</div>
+</body>
+</html>`, badgeBg, badgeColor, badgeLabel, headline, formattedBody, promoHTML, ctaHTML, unsubscribeHTML)
+
+	return subject, htmlBody
+}
+
+// SendBroadcastBatchAsync mengirim email broadcast ke daftar penerima secara paralel terbatas dan memanggil onComplete setelah selesai
+func SendBroadcastBatchAsync(req models.CreateBroadcastRequest, eventTitle string, recipients []models.BroadcastRecipient, onComplete func(sent, failed int)) {
+	SendBroadcastBatchWithTrackerAsync(req, eventTitle, recipients, nil, onComplete)
+}
+
+// SendBroadcastBatchWithTrackerAsync mengirim email broadcast dengan pelacakan status per penerima
+func SendBroadcastBatchWithTrackerAsync(
+	req models.CreateBroadcastRequest,
+	eventTitle string,
+	recipients []models.BroadcastRecipient,
+	onRecipientResult func(email, status, errMsg string),
+	onComplete func(sent, failed int),
+) {
+	go func() {
+		var sentCount int64
+		var failedCount int64
+
+		jobs := make(chan models.BroadcastRecipient, len(recipients))
+		for _, r := range recipients {
+			jobs <- r
+		}
+		close(jobs)
+
+		workerCount := 5
+		if len(recipients) < workerCount {
+			workerCount = len(recipients)
+		}
+		if workerCount == 0 {
+			if onComplete != nil {
+				onComplete(0, 0)
+			}
+			return
+		}
+
+		var wg sync.WaitGroup
+		for i := 0; i < workerCount; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for recipient := range jobs {
+					subject, body := RenderDynamicBroadcastHTML(req, eventTitle, recipient)
+					err := sendEmailViaSMTPWithError(EmailJob{
+						To:      recipient.Email,
+						Subject: subject,
+						Body:    body,
+					})
+					if err != nil {
+						atomic.AddInt64(&failedCount, 1)
+						if onRecipientResult != nil {
+							onRecipientResult(recipient.Email, "FAILED", err.Error())
+						}
+					} else {
+						atomic.AddInt64(&sentCount, 1)
+						if onRecipientResult != nil {
+							onRecipientResult(recipient.Email, "SENT", "")
+						}
+					}
+				}
+			}()
+		}
+		wg.Wait()
+
+		if onComplete != nil {
+			onComplete(int(sentCount), int(failedCount))
+		}
+	}()
 }

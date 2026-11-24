@@ -2,44 +2,45 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Update Status Refund SymphoniaTic</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0C0D12; color: #FFFFFF; margin: 0; padding: 24px 12px; }
-        .container { max-width: 540px; margin: 0 auto; background: #14161F; border-radius: 12px; border: 1px solid #272A38; overflow: hidden; }
-        .header { background: #14161F; padding: 26px 20px; text-align: center; border-bottom: 1px solid #272A38; }
-        .header h1 { margin: 0; color: #FFFFFF; font-size: 18px; font-weight: 600; letter-spacing: 2.5px; }
-        .header p { margin: 6px 0 0 0; color: #A1A1AA; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-family: ui-monospace, monospace; }
-        .content { padding: 28px 24px; }
-        .greeting { font-size: 14px; color: #FFFFFF; margin-bottom: 8px; }
-        .message { font-size: 13px; color: #A1A1AA; line-height: 1.6; margin: 0 0 16px 0; }
-        .status-badge { display: inline-block; background-color: {{.BadgeColor}}; color: #ffffff; padding: 6px 16px; border-radius: 6px; font-weight: 600; font-size: 12px; font-family: ui-monospace, monospace; letter-spacing: 1px; }
-        .box { background: #0C0D12; border: 1px solid #272A38; border-radius: 10px; padding: 18px; margin: 20px 0; }
-        .label { margin: 0; font-size: 11px; color: #71717A; text-transform: uppercase; letter-spacing: 1px; }
-        .amount { margin: 4px 0 16px 0; font-size: 20px; font-weight: 700; color: #FFFFFF; font-family: ui-monospace, SFMono-Regular, monospace; }
-        .admin-note { margin: 6px 0 0 0; font-size: 13px; color: #FFFFFF; line-height: 1.5; }
-        .help { font-size: 12px; color: #71717A; text-align: center; line-height: 1.5; margin-top: 24px; }
-        .footer { background: #0C0D12; padding: 18px 20px; text-align: center; font-size: 11px; color: #71717A; border-top: 1px solid #272A38; }
+        body { font-family: 'Plus Jakarta Sans', 'Archivo', Arial, Helvetica, sans-serif; background-color: #F4F3EF; color: #141413; margin: 0; padding: 24px 12px; }
+        .container { max-width: 580px; margin: 0 auto; background: #FFFFFF; border: 1px solid #141413; }
+        .header { background: #141413; padding: 24px 28px; border-bottom: 1px solid #141413; }
+        .brand { font-size: 16px; font-weight: 800; letter-spacing: 2px; color: #F4F3EF; margin-bottom: 10px; }
+        .header p { margin: 0; color: #D4FF2A; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+        .content { padding: 28px; }
+        .greeting { font-size: 15px; color: #141413; margin-bottom: 8px; }
+        .message { font-size: 14px; color: #52514D; line-height: 1.6; margin: 0 0 18px 0; }
+        .status-badge { display: inline-block; background-color: {{.BadgeColor}}; color: #FFFFFF; padding: 6px 14px; font-weight: 700; font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, monospace; letter-spacing: 1px; border: 1px solid #141413; }
+        .box { background: #F4F3EF; border: 1px solid #141413; padding: 18px 20px; margin: 20px 0; }
+        .label { margin: 0; font-size: 11px; color: #52514D; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+        .amount { margin: 4px 0 16px 0; font-size: 22px; font-weight: 800; color: #141413; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+        .admin-note { margin: 6px 0 0 0; font-size: 13px; color: #141413; line-height: 1.55; }
+        .help { font-size: 12px; color: #52514D; text-align: left; line-height: 1.5; margin-top: 20px; }
+        .footer { background: #F4F3EF; padding: 18px 28px; text-align: left; font-size: 11px; color: #6E6D68; border-top: 1px solid #DFDDD6; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>SYMPHONIATIC REFUND UPDATE</h1>
-            <p>Kode Pesanan: {{.OrderCode}}</p>
+            <div class="brand">SYMPHONIATIC.</div>
+            <p>REFUND UPDATE // {{.OrderCode}}</p>
         </div>
         <div class="content">
             <div class="greeting">Halo,</div>
-            <p class="message">Permohonan pengembalian dana tiket Anda untuk pesanan <strong style="color: #FFFFFF;">{{.OrderCode}}</strong> telah ditinjau dan diperbarui oleh tim manajemen kami.</p>
-            
-            <div style="text-align: center; margin: 16px 0;">
+            <p class="message">Permohonan pengembalian dana tiket Anda untuk pesanan <strong style="color: #141413; font-family: 'JetBrains Mono', ui-monospace, monospace;">{{.OrderCode}}</strong> telah ditinjau dan diperbarui oleh tim manajemen kami.</p>
+
+            <div style="margin: 16px 0;">
                 <span class="status-badge">STATUS: {{.StatusTitle}}</span>
             </div>
 
             <div class="box">
-                <p class="label">Nominal Pengembalian Dana:</p>
+                <p class="label">Nominal Pengembalian Dana</p>
                 <p class="amount">Rp {{formatCurrency .Amount}}</p>
-                
-                <p class="label">Catatan Administrator:</p>
+
+                <p class="label">Catatan Administrator</p>
                 <p class="admin-note">{{.AdminNote}}</p>
             </div>
 

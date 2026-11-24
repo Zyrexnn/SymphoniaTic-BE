@@ -2,42 +2,45 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pengingat H-1 Konser SymphoniaTic</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0C0D12; color: #FFFFFF; margin: 0; padding: 24px 12px; }
-        .container { max-width: 580px; margin: 0 auto; background: #14161F; border-radius: 12px; border: 1px solid #272A38; overflow: hidden; }
-        .header { background: #14161F; padding: 28px 24px; text-align: center; border-bottom: 1px solid #272A38; }
-        .header h1 { margin: 0; color: #FFFFFF; font-size: 18px; font-weight: 600; letter-spacing: 2.5px; }
-        .header p { margin: 6px 0 0 0; color: #A1A1AA; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
-        .content { padding: 28px 24px; }
-        .greeting { font-size: 14px; color: #FFFFFF; margin-bottom: 10px; }
-        .desc { font-size: 13px; color: #A1A1AA; line-height: 1.6; margin: 0 0 20px 0; }
-        .box { background: #0C0D12; border: 1px solid #272A38; border-radius: 10px; padding: 20px; margin: 20px 0; }
-        .venue-title { margin: 0; font-size: 12px; font-weight: 600; color: #FFFFFF; text-transform: uppercase; letter-spacing: 1px; }
-        .venue-name { margin: 6px 0 16px 0; font-size: 14px; color: #A1A1AA; line-height: 1.5; }
-        .btn-wrapper { text-align: center; margin-top: 10px; }
-        .btn { display: inline-block; background-color: #FFFFFF; color: #0C0D12; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
-        .notice { font-size: 12px; color: #71717A; text-align: center; line-height: 1.5; margin-top: 24px; }
-        .footer { background: #0C0D12; padding: 18px 20px; text-align: center; font-size: 11px; color: #71717A; border-top: 1px solid #272A38; }
+        body { font-family: 'Plus Jakarta Sans', 'Archivo', Arial, Helvetica, sans-serif; background-color: #F4F3EF; color: #141413; margin: 0; padding: 24px 12px; }
+        .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border: 1px solid #141413; }
+        .header { background: #141413; padding: 24px 28px; border-bottom: 1px solid #141413; }
+        .brand { font-size: 16px; font-weight: 800; letter-spacing: 2px; color: #F4F3EF; margin-bottom: 10px; }
+        .header h1 { margin: 0; color: #141413; background: #D4FF2A; display: inline-block; padding: 4px 10px; font-size: 12px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; }
+        .header p { margin: 10px 0 0 0; color: #EAE8E1; font-size: 12px; }
+        .content { padding: 28px; }
+        .greeting { font-size: 15px; color: #141413; margin-bottom: 10px; }
+        .desc { font-size: 14px; color: #52514D; line-height: 1.6; margin: 0 0 20px 0; }
+        .box { background: #F4F3EF; border: 1px solid #141413; padding: 20px; margin: 20px 0; }
+        .venue-title { margin: 0; font-size: 11px; font-weight: 800; color: #52514D; text-transform: uppercase; letter-spacing: 1px; }
+        .venue-name { margin: 6px 0 16px 0; font-size: 15px; color: #141413; line-height: 1.5; }
+        .btn-wrapper { margin-top: 14px; }
+        .btn { display: inline-block; background-color: #141413; color: #D4FF2A; padding: 12px 22px; text-decoration: none; border: 1px solid #141413; font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+        .notice { font-size: 12px; color: #52514D; text-align: left; line-height: 1.55; margin-top: 20px; }
+        .footer { background: #F4F3EF; padding: 18px 28px; text-align: left; font-size: 11px; color: #6E6D68; border-top: 1px solid #DFDDD6; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
+            <div class="brand">SYMPHONIATIC.</div>
             <h1>PENGINGAT KONSER H-1</h1>
             <p>Besok Adalah Hari Pertunjukan</p>
         </div>
         <div class="content">
             <div class="greeting">Halo <strong>{{.UserName}}</strong>,</div>
-            <p class="desc">Pertunjukan simfoni <strong>{{.EventTitle}}</strong> yang Anda pesan dengan kode invoice <strong style="color: #FFFFFF; font-family: monospace;">{{.OrderCode}}</strong> akan dilaksanakan besok pada <strong>{{.Date}}</strong>.</p>
-            
+            <p class="desc">Pertunjukan simfoni <strong>{{.EventTitle}}</strong> yang Anda pesan dengan kode invoice <strong style="color: #141413; font-family: 'JetBrains Mono', ui-monospace, monospace;">{{.OrderCode}}</strong> akan dilaksanakan besok pada <strong>{{.Date}}</strong>.</p>
+
             <div class="box">
-                <p class="venue-title">Lokasi &amp; Panduan Venue:</p>
-                <p class="venue-name"><strong>{{.Venue}}</strong>{{if .Address}}<br/><span style="font-size: 12px; color: #71717A;">{{.Address}}</span>{{end}}</p>
+                <p class="venue-title">Lokasi &amp; Panduan Venue</p>
+                <p class="venue-name"><strong>{{.Venue}}</strong>{{if .Address}}<br/><span style="font-size: 13px; color: #52514D;">{{.Address}}</span>{{end}}</p>
                 {{if or .Time .OpenGate}}
-                <div style="border-top: 1px solid #1D202D; padding-top: 12px; margin-bottom: 16px; font-size: 13px; color: #A1A1AA; line-height: 1.7;">
-                    {{if .OpenGate}}<div>Open Gate: <strong style="color: #FFFFFF;">{{.OpenGate}}</strong></div>{{end}}
-                    {{if .Time}}<div>Waktu Mulai: <strong style="color: #FFFFFF;">{{.Time}}</strong></div>{{end}}
+                <div style="border-top: 1px solid #DFDDD6; padding-top: 12px; margin-bottom: 16px; font-size: 13px; color: #52514D; line-height: 1.7;">
+                    {{if .OpenGate}}<div>Open Gate: <strong style="color: #141413; font-variant-numeric: tabular-nums;">{{.OpenGate}}</strong></div>{{end}}
+                    {{if .Time}}<div>Waktu Mulai: <strong style="color: #141413; font-variant-numeric: tabular-nums;">{{.Time}}</strong></div>{{end}}
                 </div>
                 {{end}}
                 <div class="btn-wrapper">
@@ -46,7 +49,7 @@
             </div>
 
             <p class="notice">
-                Pastikan Anda telah menyiapkan E-Ticket resmi pada smartphone Anda untuk proses verifikasi di Open Gate. Sampai jumpa di konser!
+                Pastikan Anda telah menyiapkan E-Ticket resmi pada smartphone Anda untuk proses verifikasi di Open Gate. Sampai jumpa di konser.
             </p>
         </div>
         <div class="footer">

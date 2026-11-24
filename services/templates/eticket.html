@@ -2,92 +2,96 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>E-Ticket SymphoniaTic</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0C0D12; color: #FFFFFF; margin: 0; padding: 24px 12px; }
-        .container { max-width: 580px; margin: 0 auto; background: #14161F; border-radius: 12px; border: 1px solid #272A38; overflow: hidden; }
-        .header { background: #14161F; padding: 28px 24px; text-align: center; border-bottom: 1px solid #272A38; }
-        .header h1 { margin: 0; color: #FFFFFF; font-size: 20px; font-weight: 600; letter-spacing: 3px; }
-        .header p { margin: 6px 0 0 0; color: #A1A1AA; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
-        .content { padding: 28px 24px; }
-        .greeting { font-size: 14px; color: #FFFFFF; margin-bottom: 12px; }
-        .desc { font-size: 13px; color: #A1A1AA; line-height: 1.6; margin: 0 0 24px 0; }
-        .ticket-box { background: #0C0D12; border: 1px solid #272A38; border-radius: 10px; padding: 20px; margin-bottom: 24px; }
-        .ticket-code { font-size: 20px; font-weight: 700; color: #FFFFFF; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-align: center; letter-spacing: 2px; margin-bottom: 12px; }
-        .badge { display: inline-block; background: rgba(255, 255, 255, 0.1); color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.25); padding: 4px 12px; border-radius: 6px; font-size: 11px; font-family: ui-monospace, monospace; letter-spacing: 1px; }
-        .detail-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; border-bottom: 1px solid #1D202D; padding-bottom: 8px; }
-        .label { color: #A1A1AA; }
-        .value { color: #FFFFFF; font-weight: 500; text-align: right; }
+        body { font-family: 'Plus Jakarta Sans', 'Archivo', Arial, Helvetica, sans-serif; background-color: #F4F3EF; color: #141413; margin: 0; padding: 24px 12px; }
+        .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border: 1px solid #141413; }
+        .header { background: #141413; padding: 24px 28px; border-bottom: 1px solid #141413; }
+        .header h1 { margin: 0; color: #F4F3EF; font-size: 20px; font-weight: 800; letter-spacing: 2px; }
+        .header-badge { display: inline-block; margin-top: 10px; background: #D4FF2A; color: #141413; padding: 4px 10px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+        .content { padding: 28px; }
+        .greeting { font-size: 15px; color: #141413; margin-bottom: 10px; }
+        .desc { font-size: 14px; color: #52514D; line-height: 1.6; margin: 0 0 24px 0; }
+        .ticket-box { background: #F4F3EF; border: 1px solid #141413; padding: 20px; margin-bottom: 24px; }
+        .ticket-code { font-size: 20px; font-weight: 800; color: #141413; font-family: 'JetBrains Mono', ui-monospace, monospace; text-align: center; letter-spacing: 2px; margin-bottom: 10px; }
+        .badge { display: inline-block; background: #D4FF2A; color: #141413; border: 1px solid #141413; padding: 4px 12px; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', ui-monospace, monospace; letter-spacing: 1px; }
+        .detail-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        .detail-table td { padding: 9px 0; font-size: 13px; border-bottom: 1px solid #DFDDD6; vertical-align: top; }
+        .label { color: #52514D; width: 42%; }
+        .value { color: #141413; font-weight: 600; text-align: right; }
         .qr-card { text-align: center; margin: 24px 0 16px 0; }
-        .qr-wrapper { background: #FFFFFF; padding: 14px; border-radius: 8px; display: inline-block; }
+        .qr-wrapper { background: #FFFFFF; border: 1px solid #141413; padding: 14px; display: inline-block; }
         .qr-wrapper img { width: 160px; height: 160px; display: block; margin: 0 auto; }
-        .qr-tip { color: #71717A; font-size: 11px; margin-top: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-        .notice { font-size: 12px; color: #71717A; text-align: center; line-height: 1.5; margin-top: 20px; }
-        .footer { background: #0C0D12; padding: 20px 24px; text-align: center; font-size: 11px; color: #71717A; border-top: 1px solid #272A38; }
+        .qr-tip { color: #52514D; font-size: 11px; margin-top: 10px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; }
+        .notice { font-size: 12px; color: #52514D; text-align: center; line-height: 1.5; margin-top: 20px; }
+        .footer { background: #F4F3EF; padding: 18px 28px; text-align: left; font-size: 11px; color: #6E6D68; border-top: 1px solid #DFDDD6; line-height: 1.5; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>SYMPHONIATIC</h1>
-            <p>E-Ticket Resmi Pertunjukan Simfoni</p>
+            <h1>SYMPHONIATIC.</h1>
+            <span class="header-badge">E-Ticket Resmi Pertunjukan</span>
         </div>
         <div class="content">
             <div class="greeting">Halo <strong>{{.UserName}}</strong>,</div>
             <p class="desc">Pembayaran transaksi Anda telah terverifikasi. Berikut adalah e-ticket resmi Anda untuk menyaksikan pertunjukan <strong>{{.EventTitle}}</strong>.</p>
-            
+
             <div class="ticket-box">
                 <div class="ticket-code">{{.OrderCode}}</div>
-                <div style="text-align: center; margin-bottom: 16px;">
+                <div style="text-align: center;">
                     <span class="badge">STATUS: ISSUED</span>
                 </div>
-                
-                <div class="detail-row">
-                    <span class="label">Konser / Event:</span>
-                    <span class="value">{{.EventTitle}}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="label">Artis / Performa:</span>
-                    <span class="value">{{.Artist}}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="label">Lokasi (Venue):</span>
-                    <span class="value">{{.Venue}}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="label">Waktu:</span>
-                    <span class="value">{{.Date}}</span>
-                </div>
-                {{if .Time}}
-                <div class="detail-row">
-                    <span class="label">Waktu Mulai:</span>
-                    <span class="value">{{.Time}}</span>
-                </div>
-                {{end}}
-                {{if .OpenGate}}
-                <div class="detail-row">
-                    <span class="label">Open Gate:</span>
-                    <span class="value">{{.OpenGate}}</span>
-                </div>
-                {{end}}
-                <div class="detail-row">
-                    <span class="label">Kategori Tiket:</span>
-                    <span class="value">{{.CategoryName}}</span>
-                </div>
-                {{if .SeatNumbers}}
-                <div class="detail-row">
-                    <span class="label">Nomor Kursi:</span>
-                    <span class="value" style="font-family: ui-monospace, monospace; font-weight: 700;">{{.SeatNumbers}}</span>
-                </div>
-                {{end}}
-                <div class="detail-row">
-                    <span class="label">Jumlah Tiket:</span>
-                    <span class="value">{{.Quantity}} Tiket</span>
-                </div>
-                <div class="detail-row" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
-                    <span class="label">Total Bayar:</span>
-                    <span class="value" style="font-family: ui-monospace, monospace; color: #FFFFFF; font-weight: 700;">Rp {{formatNumber .TotalPrice}}</span>
-                </div>
+
+                <table class="detail-table" role="presentation">
+                    <tr>
+                        <td class="label">Konser / Event</td>
+                        <td class="value">{{.EventTitle}}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Artis / Performa</td>
+                        <td class="value">{{.Artist}}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Lokasi (Venue)</td>
+                        <td class="value">{{.Venue}}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Tanggal</td>
+                        <td class="value">{{.Date}}</td>
+                    </tr>
+                    {{if .Time}}
+                    <tr>
+                        <td class="label">Waktu Mulai</td>
+                        <td class="value" style="font-variant-numeric: tabular-nums;">{{.Time}}</td>
+                    </tr>
+                    {{end}}
+                    {{if .OpenGate}}
+                    <tr>
+                        <td class="label">Open Gate</td>
+                        <td class="value" style="font-variant-numeric: tabular-nums;">{{.OpenGate}}</td>
+                    </tr>
+                    {{end}}
+                    <tr>
+                        <td class="label">Kategori Tiket</td>
+                        <td class="value">{{.CategoryName}}</td>
+                    </tr>
+                    {{if .SeatNumbers}}
+                    <tr>
+                        <td class="label">Nomor Kursi</td>
+                        <td class="value" style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 700;">{{.SeatNumbers}}</td>
+                    </tr>
+                    {{end}}
+                    <tr>
+                        <td class="label">Jumlah Tiket</td>
+                        <td class="value">{{.Quantity}} Tiket</td>
+                    </tr>
+                    <tr>
+                        <td class="label" style="border-bottom: none;">Total Bayar</td>
+                        <td class="value" style="border-bottom: none; font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 800;">Rp {{formatNumber .TotalPrice}}</td>
+                    </tr>
+                </table>
             </div>
 
             <div class="qr-card">
