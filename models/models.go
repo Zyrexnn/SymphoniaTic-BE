@@ -40,14 +40,23 @@ type EventItem struct {
 	Subtitle           string           `json:"subtitle"`
 	Description        string           `json:"description"`
 	IsClosed           bool             `json:"isClosed"`
+	Status             string           `json:"status"`
+	CancellationReason string           `json:"cancellationReason,omitempty"`
+	RescheduleReason   string           `json:"rescheduleReason,omitempty"`
+	OriginalDate       string           `json:"originalDate,omitempty"`
+	OriginalTime       string           `json:"originalTime,omitempty"`
+	StatusUpdatedAt    *time.Time       `json:"statusUpdatedAt,omitempty"`
 	EventDateTime      *time.Time       `json:"eventDateTime,omitempty"`
 	SalesEndAt         *time.Time       `json:"salesEndAt,omitempty"`
 	Rundown            []RundownItem    `json:"rundown"`
 	Categories         []TicketCategory `json:"categories"`
 }
 
-// IsSalesOpen menentukan apakah pembelian tiket masih dibuka berdasarkan override manual dan batas waktu penjualan.
+// IsSalesOpen menentukan apakah pembelian tiket masih dibuka berdasarkan status, override manual, dan batas waktu penjualan.
 func (e *EventItem) IsSalesOpen(now time.Time) bool {
+	if e.Status == "CANCELLED" || e.Status == "COMPLETED" {
+		return false
+	}
 	if e.IsClosed {
 		return false
 	}
@@ -94,6 +103,7 @@ type OrderRecord struct {
 	OrderCode         string       `json:"orderCode"`
 	UserID            string       `json:"userId,omitempty"`
 	EventID           string       `json:"eventId"`
+	EventStatus       string       `json:"eventStatus,omitempty"`
 	EventTitle        string       `json:"eventTitle"`
 	Artist            string       `json:"artist"`
 	Venue             string       `json:"venue"`
@@ -698,3 +708,78 @@ func ResolveTicketAttendee(record *OrderRecord, targetSeat string) string {
 	}
 	return strings.TrimSpace(record.UserName)
 }
+
+type CancelEventRequest struct {
+	Reason          string `json:"reason"`
+	NotifyAttendees bool   `json:"notifyAttendees"`
+}
+
+type RescheduleEventRequest struct {
+	NewDate         string `json:"newDate"`
+	NewTime         string `json:"newTime"`
+	NewOpenGate     string `json:"newOpenGate,omitempty"`
+	Reason          string `json:"reason"`
+	NotifyAttendees bool   `json:"notifyAttendees"`
+}
+
+type CreateBroadcastRequest struct {
+	TargetScope      string `json:"targetScope"`
+	TargetEventID    string `json:"targetEventId,omitempty"`
+	TargetCategoryID string `json:"targetCategoryId,omitempty"`
+	Category         string `json:"category"`
+	Subject          string `json:"subject"`
+	Headline         string `json:"headline"`
+	BodyText         string `json:"bodyText"`
+	CTALabel         string `json:"ctaLabel,omitempty"`
+	CTAURL           string `json:"ctaUrl,omitempty"`
+	PromoCode        string `json:"promoCode,omitempty"`
+}
+
+type EmailBroadcastRecord struct {
+	ID               string     `json:"id"`
+	TargetScope      string     `json:"targetScope"`
+	TargetEventID    string     `json:"targetEventId,omitempty"`
+	TargetEventName  string     `json:"targetEventName,omitempty"`
+	TargetCategoryID string     `json:"targetCategoryId,omitempty"`
+	Category         string     `json:"category"`
+	Subject          string     `json:"subject"`
+	Headline         string     `json:"headline"`
+	BodyText         string     `json:"bodyText"`
+	CTALabel         string     `json:"ctaLabel,omitempty"`
+	CTAURL           string     `json:"ctaUrl,omitempty"`
+	PromoCode        string     `json:"promoCode,omitempty"`
+	TotalRecipients  int        `json:"totalRecipients"`
+	SentCount        int        `json:"sentCount"`
+	FailedCount      int        `json:"failedCount"`
+	Status           string     `json:"status"`
+	CreatedBy        string     `json:"createdBy"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	CompletedAt      *time.Time `json:"completedAt,omitempty"`
+}
+
+type BroadcastRecipient struct {
+	Name             string
+	Email            string
+	OrderCode        string
+	UnsubscribeToken string
+}
+
+type BroadcastRecipientRecord struct {
+	ID             string     `json:"id"`
+	BroadcastID    string     `json:"broadcastId"`
+	RecipientName  string     `json:"recipientName"`
+	RecipientEmail string     `json:"recipientEmail"`
+	OrderCode      string     `json:"orderCode,omitempty"`
+	Status         string     `json:"status"`
+	ErrorMessage   string     `json:"errorMessage,omitempty"`
+	SentAt         *time.Time `json:"sentAt,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+}
+
+type BatchRefundResult struct {
+	EventID           string  `json:"eventId"`
+	ProcessedCount    int     `json:"processedCount"`
+	SkippedCount      int     `json:"skippedCount"`
+	TotalRefundAmount float64 `json:"totalRefundAmount"`
+}
+

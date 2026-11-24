@@ -40,6 +40,8 @@ var (
 	ErrStaffSelfDeactivate    = errors.New("tidak dapat menonaktifkan atau menurunkan hak akses akun sendiri yang sedang aktif")
 	ErrStaffLastSuperAdmin    = errors.New("sistem wajib memiliki minimal satu akun SUPER_ADMIN yang aktif")
 	ErrStaffInactive          = errors.New("akun staf ini sedang dinonaktifkan oleh Super Admin")
+	ErrEventCancelled         = errors.New("acara konser ini telah dibatalkan oleh penyelenggara")
+	ErrEventAlreadyCancelled  = errors.New("konser sudah berstatus dibatalkan")
 )
 
 type ErrOTPWrongCode struct {
@@ -57,6 +59,8 @@ type EventRepository interface {
 	UpdateEvent(ctx context.Context, id string, req *models.UpdateEventRequest) error
 	DeleteEvent(ctx context.Context, id string) error
 	ToggleEventClose(ctx context.Context, id string) (bool, error)
+	CancelEvent(ctx context.Context, id string, reason string) (*models.EventItem, error)
+	RescheduleEvent(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error)
 	AddCategory(ctx context.Context, eventID string, req *models.CreateCategoryInput) (*models.TicketCategory, error)
 	UpdateCategory(ctx context.Context, catID string, req *models.UpdateTicketCategoryRequest) error
 	DeleteCategory(ctx context.Context, catID string) error
@@ -90,6 +94,7 @@ type RefundRepository interface {
 	GetAllRefunds(ctx context.Context) ([]models.RefundRequestRecord, error)
 	GetUserRefunds(ctx context.Context, userEmail string) ([]models.RefundRequestRecord, error)
 	UpdateRefundStatus(ctx context.Context, refundID, newStatus, adminNote string) (*models.RefundRequestRecord, error)
+	BatchRefundByEventID(ctx context.Context, eventID string) (*models.BatchRefundResult, []models.OrderRecord, error)
 }
 
 type PromoRepository interface {
@@ -137,4 +142,18 @@ type SecurityRepository interface {
 	BlockIP(ctx context.Context, entry *models.BlockedIP) (*models.BlockedIP, error)
 	UnblockIP(ctx context.Context, idOrIP string) error
 	ListBlockedIPs(ctx context.Context, activeOnly bool) ([]models.BlockedIP, error)
+}
+
+type BroadcastRepository interface {
+	CreateBroadcast(ctx context.Context, record *models.EmailBroadcastRecord) error
+	UpdateBroadcastProgress(ctx context.Context, id string, sentCount, failedCount int, status string) error
+	GetAllBroadcasts(ctx context.Context) ([]models.EmailBroadcastRecord, error)
+	GetBroadcastByID(ctx context.Context, id string) (*models.EmailBroadcastRecord, error)
+	ResolveRecipients(ctx context.Context, scope, eventID string) ([]models.BroadcastRecipient, error)
+	ResolveRecipientsFiltered(ctx context.Context, scope, eventID, categoryID string, excludePromoOptOut bool) ([]models.BroadcastRecipient, error)
+	CreateBroadcastRecipients(ctx context.Context, broadcastID string, recipients []models.BroadcastRecipient) error
+	UpdateRecipientStatus(ctx context.Context, broadcastID, email, status, errorMsg string) error
+	GetBroadcastRecipients(ctx context.Context, broadcastID string) ([]models.BroadcastRecipientRecord, error)
+	GetFailedRecipients(ctx context.Context, broadcastID string) ([]models.BroadcastRecipient, error)
+	UnsubscribeByToken(ctx context.Context, token string) error
 }

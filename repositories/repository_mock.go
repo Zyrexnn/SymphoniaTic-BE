@@ -14,6 +14,7 @@ var (
 	_ UserRepository      = (*MockUserRepository)(nil)
 	_ PromoRepository     = (*MockPromoRepository)(nil)
 	_ AdminUserRepository = (*MockAdminUserRepository)(nil)
+	_ BroadcastRepository = (*MockBroadcastRepository)(nil)
 )
 
 type MockEventRepository struct {
@@ -23,6 +24,8 @@ type MockEventRepository struct {
 	UpdateEventFunc             func(ctx context.Context, id string, req *models.UpdateEventRequest) error
 	DeleteEventFunc             func(ctx context.Context, id string) error
 	ToggleEventCloseFunc        func(ctx context.Context, id string) (bool, error)
+	CancelEventFunc             func(ctx context.Context, id string, reason string) (*models.EventItem, error)
+	RescheduleEventFunc         func(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error)
 	AddCategoryFunc             func(ctx context.Context, eventID string, req *models.CreateCategoryInput) (*models.TicketCategory, error)
 	UpdateCategoryFunc          func(ctx context.Context, catID string, req *models.UpdateTicketCategoryRequest) error
 	DeleteCategoryFunc          func(ctx context.Context, catID string) error
@@ -71,6 +74,20 @@ func (m *MockEventRepository) ToggleEventClose(ctx context.Context, id string) (
 		return m.ToggleEventCloseFunc(ctx, id)
 	}
 	return false, nil
+}
+
+func (m *MockEventRepository) CancelEvent(ctx context.Context, id string, reason string) (*models.EventItem, error) {
+	if m.CancelEventFunc != nil {
+		return m.CancelEventFunc(ctx, id, reason)
+	}
+	return &models.EventItem{ID: id, Status: "CANCELLED", IsClosed: true, CancellationReason: reason}, nil
+}
+
+func (m *MockEventRepository) RescheduleEvent(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error) {
+	if m.RescheduleEventFunc != nil {
+		return m.RescheduleEventFunc(ctx, id, req)
+	}
+	return &models.EventItem{ID: id, Status: "RESCHEDULED", Date: req.NewDate, Time: req.NewTime, RescheduleReason: req.Reason}, nil
 }
 
 func (m *MockEventRepository) AddCategory(ctx context.Context, eventID string, req *models.CreateCategoryInput) (*models.TicketCategory, error) {
@@ -224,6 +241,7 @@ type MockRefundRepository struct {
 	GetAllRefundsFunc          func(ctx context.Context) ([]models.RefundRequestRecord, error)
 	GetUserRefundsFunc         func(ctx context.Context, userEmail string) ([]models.RefundRequestRecord, error)
 	UpdateRefundStatusFunc     func(ctx context.Context, refundID, newStatus, adminNote string) (*models.RefundRequestRecord, error)
+	BatchRefundByEventIDFunc   func(ctx context.Context, eventID string) (*models.BatchRefundResult, []models.OrderRecord, error)
 }
 
 func (m *MockRefundRepository) RequestRefundOTP(ctx context.Context, orderCode, userEmail, otpCode string, expiresAt time.Time, refundAmount float64, orderID string) error {
@@ -287,6 +305,13 @@ func (m *MockRefundRepository) UpdateRefundStatus(ctx context.Context, refundID,
 		return m.UpdateRefundStatusFunc(ctx, refundID, newStatus, adminNote)
 	}
 	return nil, nil
+}
+
+func (m *MockRefundRepository) BatchRefundByEventID(ctx context.Context, eventID string) (*models.BatchRefundResult, []models.OrderRecord, error) {
+	if m.BatchRefundByEventIDFunc != nil {
+		return m.BatchRefundByEventIDFunc(ctx, eventID)
+	}
+	return &models.BatchRefundResult{EventID: eventID}, nil, nil
 }
 
 type MockUserRepository struct {
@@ -579,4 +604,95 @@ func (m *MockSecurityRepository) ListBlockedIPs(ctx context.Context, activeOnly 
 		return m.ListBlockedIPsFunc(ctx, activeOnly)
 	}
 	return []models.BlockedIP{}, nil
+}
+
+type MockBroadcastRepository struct {
+	CreateBroadcastFunc           func(ctx context.Context, record *models.EmailBroadcastRecord) error
+	UpdateBroadcastProgressFunc   func(ctx context.Context, id string, sentCount, failedCount int, status string) error
+	GetAllBroadcastsFunc          func(ctx context.Context) ([]models.EmailBroadcastRecord, error)
+	GetBroadcastByIDFunc          func(ctx context.Context, id string) (*models.EmailBroadcastRecord, error)
+	ResolveRecipientsFunc         func(ctx context.Context, scope, eventID string) ([]models.BroadcastRecipient, error)
+	ResolveRecipientsFilteredFunc func(ctx context.Context, scope, eventID, categoryID string, excludePromoOptOut bool) ([]models.BroadcastRecipient, error)
+	CreateBroadcastRecipientsFunc func(ctx context.Context, broadcastID string, recipients []models.BroadcastRecipient) error
+	UpdateRecipientStatusFunc     func(ctx context.Context, broadcastID, email, status, errorMsg string) error
+	GetBroadcastRecipientsFunc    func(ctx context.Context, broadcastID string) ([]models.BroadcastRecipientRecord, error)
+	GetFailedRecipientsFunc       func(ctx context.Context, broadcastID string) ([]models.BroadcastRecipient, error)
+	UnsubscribeByTokenFunc        func(ctx context.Context, token string) error
+}
+
+func (m *MockBroadcastRepository) CreateBroadcast(ctx context.Context, record *models.EmailBroadcastRecord) error {
+	if m.CreateBroadcastFunc != nil {
+		return m.CreateBroadcastFunc(ctx, record)
+	}
+	return nil
+}
+
+func (m *MockBroadcastRepository) UpdateBroadcastProgress(ctx context.Context, id string, sentCount, failedCount int, status string) error {
+	if m.UpdateBroadcastProgressFunc != nil {
+		return m.UpdateBroadcastProgressFunc(ctx, id, sentCount, failedCount, status)
+	}
+	return nil
+}
+
+func (m *MockBroadcastRepository) GetAllBroadcasts(ctx context.Context) ([]models.EmailBroadcastRecord, error) {
+	if m.GetAllBroadcastsFunc != nil {
+		return m.GetAllBroadcastsFunc(ctx)
+	}
+	return []models.EmailBroadcastRecord{}, nil
+}
+
+func (m *MockBroadcastRepository) GetBroadcastByID(ctx context.Context, id string) (*models.EmailBroadcastRecord, error) {
+	if m.GetBroadcastByIDFunc != nil {
+		return m.GetBroadcastByIDFunc(ctx, id)
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockBroadcastRepository) ResolveRecipients(ctx context.Context, scope, eventID string) ([]models.BroadcastRecipient, error) {
+	if m.ResolveRecipientsFunc != nil {
+		return m.ResolveRecipientsFunc(ctx, scope, eventID)
+	}
+	return []models.BroadcastRecipient{}, nil
+}
+
+func (m *MockBroadcastRepository) ResolveRecipientsFiltered(ctx context.Context, scope, eventID, categoryID string, excludePromoOptOut bool) ([]models.BroadcastRecipient, error) {
+	if m.ResolveRecipientsFilteredFunc != nil {
+		return m.ResolveRecipientsFilteredFunc(ctx, scope, eventID, categoryID, excludePromoOptOut)
+	}
+	return m.ResolveRecipients(ctx, scope, eventID)
+}
+
+func (m *MockBroadcastRepository) CreateBroadcastRecipients(ctx context.Context, broadcastID string, recipients []models.BroadcastRecipient) error {
+	if m.CreateBroadcastRecipientsFunc != nil {
+		return m.CreateBroadcastRecipientsFunc(ctx, broadcastID, recipients)
+	}
+	return nil
+}
+
+func (m *MockBroadcastRepository) UpdateRecipientStatus(ctx context.Context, broadcastID, email, status, errorMsg string) error {
+	if m.UpdateRecipientStatusFunc != nil {
+		return m.UpdateRecipientStatusFunc(ctx, broadcastID, email, status, errorMsg)
+	}
+	return nil
+}
+
+func (m *MockBroadcastRepository) GetBroadcastRecipients(ctx context.Context, broadcastID string) ([]models.BroadcastRecipientRecord, error) {
+	if m.GetBroadcastRecipientsFunc != nil {
+		return m.GetBroadcastRecipientsFunc(ctx, broadcastID)
+	}
+	return []models.BroadcastRecipientRecord{}, nil
+}
+
+func (m *MockBroadcastRepository) GetFailedRecipients(ctx context.Context, broadcastID string) ([]models.BroadcastRecipient, error) {
+	if m.GetFailedRecipientsFunc != nil {
+		return m.GetFailedRecipientsFunc(ctx, broadcastID)
+	}
+	return []models.BroadcastRecipient{}, nil
+}
+
+func (m *MockBroadcastRepository) UnsubscribeByToken(ctx context.Context, token string) error {
+	if m.UnsubscribeByTokenFunc != nil {
+		return m.UnsubscribeByTokenFunc(ctx, token)
+	}
+	return nil
 }

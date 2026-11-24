@@ -111,6 +111,12 @@ func initSchema() {
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS is_closed BOOLEAN DEFAULT FALSE;
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS event_date_time TIMESTAMP WITH TIME ZONE DEFAULT NULL;
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS sales_end_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS cancellation_reason TEXT NOT NULL DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS reschedule_reason TEXT NOT NULL DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS original_date VARCHAR(100) NOT NULL DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS original_time VARCHAR(50) NOT NULL DEFAULT '';
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
 
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS user_id VARCHAR(64) DEFAULT '';
 	ALTER TABLE orders ADD COLUMN IF NOT EXISTS promo_code VARCHAR(50) DEFAULT '';
@@ -179,9 +185,14 @@ func initSchema() {
 		password_hash VARCHAR(255) DEFAULT '',
 		role VARCHAR(50) DEFAULT 'USER',
 		is_verified BOOLEAN DEFAULT TRUE,
+		email_promo_opt_out BOOLEAN NOT NULL DEFAULT FALSE,
+		unsubscribe_token VARCHAR(64) DEFAULT '',
 		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 	);
+
+	ALTER TABLE users ADD COLUMN IF NOT EXISTS email_promo_opt_out BOOLEAN NOT NULL DEFAULT FALSE;
+	ALTER TABLE users ADD COLUMN IF NOT EXISTS unsubscribe_token VARCHAR(64) DEFAULT '';
 
 	CREATE TABLE IF NOT EXISTS auth_otps (
 		id VARCHAR(64) PRIMARY KEY,
@@ -283,6 +294,45 @@ func initSchema() {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_blocked_ips_ip_active ON blocked_ips(ip_address, is_active);
+
+	CREATE TABLE IF NOT EXISTS email_broadcasts (
+		id VARCHAR(64) PRIMARY KEY,
+		target_scope VARCHAR(30) NOT NULL,
+		target_event_id VARCHAR(64) REFERENCES events(id) ON DELETE SET NULL,
+		target_category_id VARCHAR(64) DEFAULT '',
+		category VARCHAR(30) NOT NULL,
+		subject VARCHAR(255) NOT NULL,
+		headline VARCHAR(255) NOT NULL,
+		body_text TEXT NOT NULL,
+		cta_label VARCHAR(100) NOT NULL DEFAULT '',
+		cta_url TEXT NOT NULL DEFAULT '',
+		promo_code VARCHAR(50) NOT NULL DEFAULT '',
+		total_recipients INT NOT NULL DEFAULT 0,
+		sent_count INT NOT NULL DEFAULT 0,
+		failed_count INT NOT NULL DEFAULT 0,
+		status VARCHAR(20) NOT NULL DEFAULT 'PROCESSING',
+		created_by VARCHAR(100) NOT NULL,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+		completed_at TIMESTAMP WITH TIME ZONE
+	);
+
+	ALTER TABLE email_broadcasts ADD COLUMN IF NOT EXISTS target_category_id VARCHAR(64) DEFAULT '';
+
+	CREATE TABLE IF NOT EXISTS email_broadcast_recipients (
+		id VARCHAR(64) PRIMARY KEY,
+		broadcast_id VARCHAR(64) NOT NULL REFERENCES email_broadcasts(id) ON DELETE CASCADE,
+		recipient_name VARCHAR(255) NOT NULL DEFAULT '',
+		recipient_email VARCHAR(255) NOT NULL,
+		order_code VARCHAR(100) DEFAULT '',
+		status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+		error_message TEXT DEFAULT '',
+		sent_at TIMESTAMP WITH TIME ZONE,
+		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_email_broadcasts_created_at ON email_broadcasts(created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_email_broadcasts_target_event ON email_broadcasts(target_event_id);
+	CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_bcast_status ON email_broadcast_recipients(broadcast_id, status);
 	`
 
 	_, err := DB.Exec(schemaQuery)
