@@ -28,6 +28,8 @@ func setupEventControllerTest(mockRepo *repositories.MockEventRepository) *fiber
 	api.Put("/admin/events/:id", eventCtrl.UpdateEvent)
 	api.Delete("/admin/events/:id", eventCtrl.DeleteEvent)
 	api.Patch("/admin/events/:id/toggle-close", eventCtrl.ToggleEventClose)
+	api.Post("/admin/events/:id/cancel", eventCtrl.CancelEvent)
+	api.Post("/admin/events/:id/reschedule", eventCtrl.RescheduleEvent)
 
 	api.Post("/admin/events/:id/categories", categoryCtrl.CreateTicketCategory)
 	api.Put("/admin/categories/:id", categoryCtrl.UpdateTicketCategory)
@@ -488,6 +490,72 @@ func TestEventController_UpdateEvent(t *testing.T) {
 			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("ToggleEventClose Gagal (400 Bad Request) jika konser sudah dibatalkan", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			ToggleEventCloseFunc: func(ctx context.Context, id string) (bool, error) {
+				return false, repositories.ErrEventCancelled
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("PATCH", "/api/v1/admin/events/evt-1/toggle-close", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("CancelEvent dengan NotifyAttendees true mencatat dan mengirim broadcast otomatis", func(t *testing.T) {
+		mockEventRepo := &repositories.MockEventRepository{
+			CancelEventFunc: func(ctx context.Context, id string, reason string) (*models.EventItem, error) {
+				return &models.EventItem{
+					ID:                 id,
+					Title:              "Simfoni Malam",
+					Date:               "Sabtu, 18 April 2027",
+					Status:             "CANCELLED",
+					IsClosed:           true,
+					CancellationReason: reason,
+				}, nil
+			},
+		}
+		var createdBroadcast *models.EmailBroadcastRecord
+		mockBroadcastRepo := &repositories.MockBroadcastRepository{
+			ResolveRecipientsFunc: func(ctx context.Context, scope, eventID string) ([]models.BroadcastRecipient, error) {
+				return []models.BroadcastRecipient{
+					{Name: "Clara", Email: "clara@example.com", OrderCode: "SYM-101"},
+				}, nil
+			},
+			CreateBroadcastFunc: func(ctx context.Context, record *models.EmailBroadcastRecord) error {
+				createdBroadcast = record
+				return nil
+			},
+		}
+
+		app := fiber.New()
+		eventCtrl := controllers.NewEventController(mockEventRepo)
+		eventCtrl.SetBroadcastRepo(mockBroadcastRepo)
+		app.Post("/api/v1/admin/events/:id/cancel", eventCtrl.CancelEvent)
+
+		bodyBytes, _ := json.Marshal(models.CancelEventRequest{
+			Reason:          "Force majeure venue",
+			NotifyAttendees: true,
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/cancel", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+		if createdBroadcast == nil || createdBroadcast.Category != "EVENT_CANCELLED" || createdBroadcast.TotalRecipients != 1 {
+			t.Fatalf("Broadcast otomatis pembatalan tidak tercatat dengan benar: %+v", createdBroadcast)
+		}
+	})
 }
 
 func TestEventController_ToggleEventClose(t *testing.T) {
@@ -732,6 +800,72 @@ func TestCategoryController_Management(t *testing.T) {
 			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("ToggleEventClose Gagal (400 Bad Request) jika konser sudah dibatalkan", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			ToggleEventCloseFunc: func(ctx context.Context, id string) (bool, error) {
+				return false, repositories.ErrEventCancelled
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("PATCH", "/api/v1/admin/events/evt-1/toggle-close", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("CancelEvent dengan NotifyAttendees true mencatat dan mengirim broadcast otomatis", func(t *testing.T) {
+		mockEventRepo := &repositories.MockEventRepository{
+			CancelEventFunc: func(ctx context.Context, id string, reason string) (*models.EventItem, error) {
+				return &models.EventItem{
+					ID:                 id,
+					Title:              "Simfoni Malam",
+					Date:               "Sabtu, 18 April 2027",
+					Status:             "CANCELLED",
+					IsClosed:           true,
+					CancellationReason: reason,
+				}, nil
+			},
+		}
+		var createdBroadcast *models.EmailBroadcastRecord
+		mockBroadcastRepo := &repositories.MockBroadcastRepository{
+			ResolveRecipientsFunc: func(ctx context.Context, scope, eventID string) ([]models.BroadcastRecipient, error) {
+				return []models.BroadcastRecipient{
+					{Name: "Clara", Email: "clara@example.com", OrderCode: "SYM-101"},
+				}, nil
+			},
+			CreateBroadcastFunc: func(ctx context.Context, record *models.EmailBroadcastRecord) error {
+				createdBroadcast = record
+				return nil
+			},
+		}
+
+		app := fiber.New()
+		eventCtrl := controllers.NewEventController(mockEventRepo)
+		eventCtrl.SetBroadcastRepo(mockBroadcastRepo)
+		app.Post("/api/v1/admin/events/:id/cancel", eventCtrl.CancelEvent)
+
+		bodyBytes, _ := json.Marshal(models.CancelEventRequest{
+			Reason:          "Force majeure venue",
+			NotifyAttendees: true,
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/cancel", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+		if createdBroadcast == nil || createdBroadcast.Category != "EVENT_CANCELLED" || createdBroadcast.TotalRecipients != 1 {
+			t.Fatalf("Broadcast otomatis pembatalan tidak tercatat dengan benar: %+v", createdBroadcast)
+		}
+	})
 }
 
 func TestEventController_GetEventSeats(t *testing.T) {
@@ -769,6 +903,166 @@ func TestEventController_GetEventSeats(t *testing.T) {
 		}
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("Ekspektasi 404 Not Found, dapat %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestEventController_LifecycleActions(t *testing.T) {
+	t.Run("CancelEvent Sukses (200 OK)", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			CancelEventFunc: func(ctx context.Context, id string, reason string) (*models.EventItem, error) {
+				return &models.EventItem{
+					ID:                 id,
+					Status:             "CANCELLED",
+					IsClosed:           true,
+					CancellationReason: reason,
+				}, nil
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		bodyBytes, _ := json.Marshal(models.CancelEventRequest{Reason: "Kondisi force majeure di gedung pertunjukan"})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/cancel", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("CancelEvent Gagal (400 Bad Request) jika alasan kosong", func(t *testing.T) {
+		app := setupEventControllerTest(&repositories.MockEventRepository{})
+		bodyBytes, _ := json.Marshal(models.CancelEventRequest{Reason: "   "})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/cancel", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("RescheduleEvent Sukses (200 OK)", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			RescheduleEventFunc: func(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error) {
+				return &models.EventItem{
+					ID:               id,
+					Status:           "RESCHEDULED",
+					Date:             req.NewDate,
+					Time:             req.NewTime,
+					OriginalDate:     "Sabtu, 18 April 2027",
+					OriginalTime:     "19:30 WIB",
+					RescheduleReason: req.Reason,
+				}, nil
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		bodyBytes, _ := json.Marshal(models.RescheduleEventRequest{
+			NewDate: "Sabtu, 25 April 2027",
+			NewTime: "20:00 WIB",
+			Reason:  "Penyesuaian jadwal konduktor tamu",
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/reschedule", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("RescheduleEvent Gagal (400 Bad Request) jika konser sudah dibatalkan", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			RescheduleEventFunc: func(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error) {
+				return nil, repositories.ErrEventCancelled
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		bodyBytes, _ := json.Marshal(models.RescheduleEventRequest{
+			NewDate: "Sabtu, 25 April 2027",
+			NewTime: "20:00 WIB",
+			Reason:  "Penyesuaian jadwal",
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/reschedule", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("ToggleEventClose Gagal (400 Bad Request) jika konser sudah dibatalkan", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{
+			ToggleEventCloseFunc: func(ctx context.Context, id string) (bool, error) {
+				return false, repositories.ErrEventCancelled
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		req := httptest.NewRequest("PATCH", "/api/v1/admin/events/evt-1/toggle-close", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("CancelEvent dengan NotifyAttendees true mencatat dan mengirim broadcast otomatis", func(t *testing.T) {
+		mockEventRepo := &repositories.MockEventRepository{
+			CancelEventFunc: func(ctx context.Context, id string, reason string) (*models.EventItem, error) {
+				return &models.EventItem{
+					ID:                 id,
+					Title:              "Simfoni Malam",
+					Date:               "Sabtu, 18 April 2027",
+					Status:             "CANCELLED",
+					IsClosed:           true,
+					CancellationReason: reason,
+				}, nil
+			},
+		}
+		var createdBroadcast *models.EmailBroadcastRecord
+		mockBroadcastRepo := &repositories.MockBroadcastRepository{
+			ResolveRecipientsFunc: func(ctx context.Context, scope, eventID string) ([]models.BroadcastRecipient, error) {
+				return []models.BroadcastRecipient{
+					{Name: "Clara", Email: "clara@example.com", OrderCode: "SYM-101"},
+				}, nil
+			},
+			CreateBroadcastFunc: func(ctx context.Context, record *models.EmailBroadcastRecord) error {
+				createdBroadcast = record
+				return nil
+			},
+		}
+
+		app := fiber.New()
+		eventCtrl := controllers.NewEventController(mockEventRepo)
+		eventCtrl.SetBroadcastRepo(mockBroadcastRepo)
+		app.Post("/api/v1/admin/events/:id/cancel", eventCtrl.CancelEvent)
+
+		bodyBytes, _ := json.Marshal(models.CancelEventRequest{
+			Reason:          "Force majeure venue",
+			NotifyAttendees: true,
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/cancel", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+		if createdBroadcast == nil || createdBroadcast.Category != "EVENT_CANCELLED" || createdBroadcast.TotalRecipients != 1 {
+			t.Fatalf("Broadcast otomatis pembatalan tidak tercatat dengan benar: %+v", createdBroadcast)
 		}
 	})
 }

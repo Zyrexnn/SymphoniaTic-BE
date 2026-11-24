@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -805,6 +806,193 @@ func TestRefundController_SubmitUserRefund(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-MEM101/refund", bytes.NewBuffer(bodyBytes))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestRefundController_EventDisruptionBypass(t *testing.T) {
+	memberToken, _ := utils.GenerateUserToken("usr-101", "member@example.com", "Anggota Simfoni")
+	nearConcertDate := time.Now().Add(2 * time.Hour).Format("2006-01-02")
+	nearConcertTime := time.Now().Add(2 * time.Hour).Format("15:04")
+
+	t.Run("Bypass batas 24 jam berhasil (201 Created) saat event CANCELLED", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:          "ord-cancel-1",
+					OrderCode:   "SYM-CANCEL1",
+					UserID:      "usr-101",
+					UserEmail:   "member@example.com",
+					EventStatus: "CANCELLED",
+					Date:        nearConcertDate,
+					EventTime:   nearConcertTime,
+					Status:      "ISSUED",
+					TotalPrice:  500000,
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{
+			SubmitDirectUserRefundFunc: func(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error) {
+				return &models.RefundRequestRecord{ID: "ref-1", OrderCode: order.OrderCode, Status: "PENDING"}, nil
+			},
+		}
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		bodyBytes, _ := json.Marshal(models.SubmitUserRefundInput{
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Anggota Simfoni",
+			Reason:        "Konser dibatalkan penyelenggara",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-CANCEL1/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created saat event CANCELLED, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Bypass batas 24 jam berhasil (201 Created) saat event RESCHEDULED", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:          "ord-resched-1",
+					OrderCode:   "SYM-RESCH1",
+					UserID:      "usr-101",
+					UserEmail:   "member@example.com",
+					EventStatus: "RESCHEDULED",
+					Date:        nearConcertDate,
+					EventTime:   nearConcertTime,
+					Status:      "ISSUED",
+					TotalPrice:  500000,
+				}, nil
+			},
+		}
+		mockRefundRepo := &repositories.MockRefundRepository{
+			SubmitDirectUserRefundFunc: func(ctx context.Context, order *models.OrderRecord, input *models.SubmitUserRefundInput) (*models.RefundRequestRecord, error) {
+				return &models.RefundRequestRecord{ID: "ref-2", OrderCode: order.OrderCode, Status: "PENDING"}, nil
+			},
+		}
+		app := setupRefundControllerTest(mockRefundRepo, mockOrderRepo)
+		bodyBytes, _ := json.Marshal(models.SubmitUserRefundInput{
+			BankName:      "Mandiri",
+			AccountNumber: "9876543210",
+			AccountHolder: "Anggota Simfoni",
+			Reason:        "Tidak bisa hadir di jadwal baru",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-RESCH1/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created saat event RESCHEDULED, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Tetap ditolak (400 Bad Request) saat event CANCELLED tetapi tiket sudah CHECKED_IN", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:          "ord-used-1",
+					OrderCode:   "SYM-USED1",
+					UserID:      "usr-101",
+					UserEmail:   "member@example.com",
+					EventStatus: "CANCELLED",
+					Status:      "CHECKED_IN",
+				}, nil
+			},
+		}
+		app := setupRefundControllerTest(&repositories.MockRefundRepository{}, mockOrderRepo)
+		bodyBytes, _ := json.Marshal(models.SubmitUserRefundInput{
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Anggota Simfoni",
+			Reason:        "Konser dibatalkan",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-USED1/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request untuk tiket CHECKED_IN, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Tetap ditolak (400 Bad Request) saat event SCHEDULED dan konser < 24 jam", func(t *testing.T) {
+		mockOrderRepo := &repositories.MockOrderRepository{
+			GetOrderByCodeFunc: func(ctx context.Context, code string) (*models.OrderRecord, error) {
+				return &models.OrderRecord{
+					ID:          "ord-sched-1",
+					OrderCode:   "SYM-SCHED1",
+					UserID:      "usr-101",
+					UserEmail:   "member@example.com",
+					EventStatus: "SCHEDULED",
+					Date:        nearConcertDate,
+					EventTime:   nearConcertTime,
+					Status:      "ISSUED",
+				}, nil
+			},
+		}
+		app := setupRefundControllerTest(&repositories.MockRefundRepository{}, mockOrderRepo)
+		bodyBytes, _ := json.Marshal(models.SubmitUserRefundInput{
+			BankName:      "BCA",
+			AccountNumber: "1234567890",
+			AccountHolder: "Anggota Simfoni",
+			Reason:        "Berubah pikiran",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/user/orders/SYM-SCHED1/refund", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+memberToken)
+		resp, _ := app.Test(req, -1)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request untuk event SCHEDULED < 24 jam, dapat %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestRefundController_AdminBatchRefundByEvent(t *testing.T) {
+	t.Run("Sukses (200 OK) memproses batch refund konser batal", func(t *testing.T) {
+		mockRefundRepo := &repositories.MockRefundRepository{
+			BatchRefundByEventIDFunc: func(ctx context.Context, eventID string) (*models.BatchRefundResult, []models.OrderRecord, error) {
+				return &models.BatchRefundResult{
+						EventID:           eventID,
+						ProcessedCount:    2,
+						SkippedCount:      1,
+						TotalRefundAmount: 1500000,
+					}, []models.OrderRecord{
+						{OrderCode: "SYM-1", UserEmail: "a@example.com", TotalPrice: 750000},
+						{OrderCode: "SYM-2", UserEmail: "b@example.com", TotalPrice: 750000},
+					}, nil
+			},
+		}
+		app := fiber.New()
+		ctrl := controllers.NewRefundControllerWithOrderRepo(mockRefundRepo, &repositories.MockOrderRepository{})
+		app.Post("/api/v1/admin/events/:id/batch-refund", ctrl.AdminBatchRefundByEvent)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events/evt-1/batch-refund", nil)
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Gagal (400 Bad Request) jika konser belum dibatalkan", func(t *testing.T) {
+		mockRefundRepo := &repositories.MockRefundRepository{
+			BatchRefundByEventIDFunc: func(ctx context.Context, eventID string) (*models.BatchRefundResult, []models.OrderRecord, error) {
+				return nil, nil, errors.New("batch refund hanya dapat dijalankan untuk konser yang sudah dibatalkan")
+			},
+		}
+		app := fiber.New()
+		ctrl := controllers.NewRefundControllerWithOrderRepo(mockRefundRepo, &repositories.MockOrderRepository{})
+		app.Post("/api/v1/admin/events/:id/batch-refund", ctrl.AdminBatchRefundByEvent)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/events/evt-1/batch-refund", nil)
 		resp, _ := app.Test(req, -1)
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)

@@ -75,6 +75,9 @@ func TestRouter_RoleAuthorizationSegregation(t *testing.T) {
 		{http.MethodPost, "/api/v1/admin/events", "{}"},
 		{http.MethodPut, "/api/v1/admin/events/evt-1", "{}"},
 		{http.MethodPatch, "/api/v1/admin/events/evt-1/toggle-close", ""},
+		{http.MethodPost, "/api/v1/admin/events/evt-1/cancel", `{"reason":"Force majeure"}`},
+		{http.MethodPost, "/api/v1/admin/events/evt-1/reschedule", `{"newDate":"2027-05-01","newTime":"19:30","reason":"Penyesuaian"}`},
+		{http.MethodPost, "/api/v1/admin/events/evt-1/batch-refund", ""},
 		{http.MethodDelete, "/api/v1/admin/events/evt-1", ""},
 		{http.MethodPost, "/api/v1/admin/events/evt-1/categories", "{}"},
 		{http.MethodPut, "/api/v1/admin/categories/cat-1", "{}"},
@@ -87,6 +90,10 @@ func TestRouter_RoleAuthorizationSegregation(t *testing.T) {
 		{http.MethodPut, "/api/v1/admin/promos/promo-1", "{}"},
 		{http.MethodPatch, "/api/v1/admin/promos/promo-1/toggle-active", ""},
 		{http.MethodDelete, "/api/v1/admin/promos/promo-1", ""},
+		{http.MethodGet, "/api/v1/admin/broadcasts", ""},
+		{http.MethodPost, "/api/v1/admin/broadcasts", "{}"},
+		{http.MethodGet, "/api/v1/admin/broadcasts/bcast-1/recipients", ""},
+		{http.MethodPost, "/api/v1/admin/broadcasts/bcast-1/retry", ""},
 	}
 
 	for _, tc := range adminExclusiveEndpoints {

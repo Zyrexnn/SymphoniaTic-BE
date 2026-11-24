@@ -425,7 +425,7 @@ func newStubDB(t *testing.T, state *stubDBState) *sql.DB {
 
 func orderStubColumns() []string {
 	return []string{
-		"id", "order_code", "user_id", "event_id", "event_title", "artist", "venue", "date",
+		"id", "order_code", "user_id", "event_id", "event_status", "event_title", "artist", "venue", "date",
 		"open_gate", "event_time", "venue_address", "category_name", "quantity", "total_price",
 		"promo_code", "discount_amount",
 		"user_name", "user_email", "qr_code", "seat_numbers", "attendee_names", "checked_in_seats",
@@ -435,7 +435,7 @@ func orderStubColumns() []string {
 
 func sampleOrderRow(status string) []driver.Value {
 	return []driver.Value{
-		"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
+		"ord-1", "SYM-100001", "usr-1", "evt-1", "SCHEDULED", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 		"22 November 2026 @ 14:21 WIB", "13:21 WIB", "14:21 WIB", "Jl. Industri No. 1",
 		"VIP Pit", int64(2), float64(1500000), "", float64(0), "Budi", "budi@example.com", "QR-SYM-100001",
 		"A-1, A-2", "", "", status, "SANDBOX_PAYMENT", time.Now(),
@@ -492,13 +492,13 @@ func TestOrderRepository_EnrichedQueriesAndRemindedCheckIn(t *testing.T) {
 					"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 					"attendee_names", "checked_in_seats",
 					"status", "payment_method", "created_at",
-					"is_closed", "open_gate", "time", "event_date_time",
+					"is_closed", "open_gate", "time", "status", "event_date_time",
 				},
 				rows: [][]driver.Value{{
 					"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 					time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(2), float64(1500000), "Budi", "budi@example.com",
 					"QR-SYM-100001", "A-1, A-2", "", "", "REMINDED", "SANDBOX_PAYMENT", time.Now(),
-					false, "", "", time.Now().Add(-10 * time.Minute),
+					false, "", "", "SCHEDULED", time.Now().Add(-10 * time.Minute),
 				}},
 			}
 		},
@@ -525,13 +525,13 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 							"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 							"attendee_names", "checked_in_seats",
 							"status", "payment_method", "created_at",
-							"is_closed", "open_gate", "time", "event_date_time",
+							"is_closed", "open_gate", "time", "status", "event_date_time",
 						},
 						rows: [][]driver.Value{{
 							"ord-1", "SYM-CLOSED", "usr-1", "evt-1", "Simfoni Ditutup", "Jakarta Orchestra", "Aula Simfonia",
 							time.Now().Format("2006-01-02") + " @ " + time.Now().Format("15:04"), "VIP Pit", int64(1), float64(750000), "Budi", "budi@example.com",
 							"QR-SYM-CLOSED", "A-1", "", "", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
-							true, "", "", time.Now().Add(-10 * time.Minute),
+							true, "", "", "SCHEDULED", time.Now().Add(-10 * time.Minute),
 						}},
 					}
 				}
@@ -557,7 +557,7 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 						"attendee_names", "checked_in_seats",
 						"status", "payment_method", "created_at",
-						"is_closed", "open_gate", "time", "event_date_time",
+						"is_closed", "open_gate", "time", "status", "event_date_time",
 					},
 					rows: [][]driver.Value{{
 						"ord-2", "SYM-FUTURE", "usr-1", "evt-1", "Simfoni Besok", "Jakarta Orchestra", "Aula Simfonia",
@@ -601,7 +601,7 @@ func TestOrderRepository_CheckInTicketGateValidations(t *testing.T) {
 						"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 						"attendee_names", "checked_in_seats",
 						"status", "payment_method", "created_at",
-						"is_closed", "open_gate", "time", "event_date_time",
+						"is_closed", "open_gate", "time", "status", "event_date_time",
 					},
 					rows: [][]driver.Value{{
 						"ord-3", "SYM-EXPIRED", "usr-1", "evt-1", "Simfoni Kemarin", "Jakarta Orchestra", "Aula Simfonia",
@@ -853,8 +853,8 @@ func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
-						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, "SCHEDULED", futureDate, nil}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
 					return stubQueryResult{
@@ -913,8 +913,8 @@ func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
-						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, "SCHEDULED", futureDate, nil}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
 					return stubQueryResult{
@@ -951,8 +951,8 @@ func TestOrderRepository_CreateOrderSeatLocking(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
-						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
+						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, "SCHEDULED", futureDate, nil}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
 					return stubQueryResult{
@@ -1018,8 +1018,8 @@ func TestOrderRepository_CreateOrderMultipleTicketsWithAttendees(t *testing.T) {
 			switch {
 			case strings.Contains(query, "FROM events"):
 				return stubQueryResult{
-					columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
-					rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureDate, nil}},
+					columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
+					rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, "SCHEDULED", futureDate, nil}},
 				}
 			case strings.Contains(query, "FROM ticket_categories"):
 				return stubQueryResult{
@@ -1083,7 +1083,7 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 				return stubQueryResult{
 					columns: orderStubColumns(),
 					rows: [][]driver.Value{{
-						"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
+						"ord-1", "SYM-100001", "usr-1", "evt-1", "SCHEDULED", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
 						"22 November 2026 @ 14:21 WIB", "13:21 WIB", "14:21 WIB", "Jl. Industri No. 1",
 						"VIP Pit", int64(2), float64(1500000), "", float64(0), "Budi", "budi@example.com", "QR-SYM-100001",
 						"A-1, A-2", `["Budi","Siti"]`, "A-1", "ISSUED", "SANDBOX_PAYMENT", time.Now(),
@@ -1123,7 +1123,7 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 							"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 							"attendee_names", "checked_in_seats",
 							"status", "payment_method", "created_at",
-							"is_closed", "open_gate", "time", "event_date_time",
+							"is_closed", "open_gate", "time", "status", "event_date_time",
 						},
 						rows: [][]driver.Value{{
 							"ord-1", "SYM-100001", "usr-1", "evt-1", "Simfoni Siang", "Jakarta Orchestra", "Aula Simfonia",
@@ -1187,7 +1187,7 @@ func TestOrderRepository_SubQRLookupAndPartialCheckIn(t *testing.T) {
 							"category_name", "quantity", "total_price", "user_name", "user_email", "qr_code", "seat_numbers",
 							"attendee_names", "checked_in_seats",
 							"status", "payment_method", "created_at",
-							"is_closed", "open_gate", "time", "event_date_time",
+							"is_closed", "open_gate", "time", "status", "event_date_time",
 						},
 						rows: [][]driver.Value{{
 							"ord-legacy", "SYM-100099", "usr-1", "evt-1", "Simfoni Lama", "Jakarta Orchestra", "Aula Simfonia",
@@ -1224,7 +1224,7 @@ func TestOrderRepository_CreateOrderSalesCutoff(t *testing.T) {
 			queryRouter: func(query string, args []driver.Value) stubQueryResult {
 				if strings.Contains(query, "FROM events") {
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
 						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureConcert, pastCutoff}},
 					}
 				}
@@ -1250,7 +1250,7 @@ func TestOrderRepository_CreateOrderSalesCutoff(t *testing.T) {
 				switch {
 				case strings.Contains(query, "FROM events"):
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
 						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", false, futureConcert, futureCutoff}},
 					}
 				case strings.Contains(query, "FROM ticket_categories"):
@@ -1284,7 +1284,7 @@ func TestOrderRepository_CreateOrderSalesCutoff(t *testing.T) {
 			queryRouter: func(query string, args []driver.Value) stubQueryResult {
 				if strings.Contains(query, "FROM events") {
 					return stubQueryResult{
-						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "event_date_time", "sales_end_at"},
+						columns: []string{"title", "artist", "venue", "date", "time", "open_gate", "address", "is_closed", "status", "event_date_time", "sales_end_at"},
 						rows:    [][]driver.Value{{"Simfoni No. 5", "Orkestra", "Aula Simfonia", "2027-04-18", "19:30", "18:00", "Jl. Industri", true, futureConcert, futureCutoff}},
 					}
 				}

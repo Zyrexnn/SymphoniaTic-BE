@@ -195,4 +195,24 @@ func TestTicketController_CheckInEdgeCases(t *testing.T) {
 			t.Fatalf("Pesan respons tidak sesuai: %q", apiResp.Message)
 		}
 	})
+
+	t.Run("Gagal (400 Bad Request) saat check-in tiket dari konser yang dibatalkan meski BypassOpenGate true", func(t *testing.T) {
+		mockRepo := &repositories.MockOrderRepository{
+			CheckInTicketFunc: func(ctx context.Context, orderCode string, bypassOpenGate bool) (*models.OrderRecord, error) {
+				return nil, repositories.ErrEventCancelled
+			},
+		}
+
+		app := setupOrderControllerTest(mockRepo)
+		bodyBytes, _ := json.Marshal(models.CheckInRequest{Code: "SYM-CANCELLED-EVT", BypassOpenGate: true})
+		req := httptest.NewRequest("POST", "/api/v1/admin/tickets/checkin", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim HTTP request: %v", err)
+		}
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
 }

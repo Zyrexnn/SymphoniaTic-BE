@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"net/smtp"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -421,5 +422,119 @@ func TestEnqueueEmail_FullQueueFallback(t *testing.T) {
 
 	if atomic.LoadInt32(&sentCount) != 4 {
 		t.Fatalf("Jumlah pengiriman email fallback tidak sesuai: diharapkan 4, didapat %d", sentCount)
+	}
+}
+
+func TestRenderDynamicBroadcastHTML_EscapingAndPlaceholders(t *testing.T) {
+	req := models.CreateBroadcastRequest{
+		Category:  "PROMO",
+		Subject:   "Promo untuk {{name}} - {{eventTitle}}",
+		Headline:  "Diskon Spesial {{name}}",
+		BodyText:  "Halo {{name}},\nGunakan kode untuk {{eventTitle}} (Order {{orderCode}}).",
+		PromoCode: "SYMPHONIA10",
+		CTALabel:  "Pesan Sekarang",
+		CTAURL:    "https://symphoniatic.id/concerts",
+	}
+	recipient := models.BroadcastRecipient{
+		Name:      `<script>alert("xss")</script>Budi`,
+		Email:     "budi@example.com",
+		OrderCode: "SYM-777",
+	}
+
+	subject, htmlBody := RenderDynamicBroadcastHTML(req, "Simfoni Malam", recipient)
+	if !strings.Contains(subject, "Simfoni Malam") {
+		t.Fatalf("Subject tidak mengganti placeholder eventTitle: %s", subject)
+	}
+	if strings.Contains(htmlBody, `<script>alert("xss")</script>`) {
+		t.Fatalf("HTML tidak di-escape dengan aman: %s", htmlBody)
+	}
+	if !strings.Contains(htmlBody, "&lt;script&gt;") || !strings.Contains(htmlBody, "SYM-777") || !strings.Contains(htmlBody, "SYMPHONIA10") {
+		t.Fatalf("Konten placeholder atau promo code hilang dari hasil render")
+	}
+}
+
+func TestSendBroadcastBatchAsync_TracksSuccessAndFailure(t *testing.T) {
+	origSender := emailSender
+	defer func() {
+		emailSender = origSender
+	}()
+
+	emailSender = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		if len(to) > 0 && strings.Contains(to[0], "fail") {
+			return fmt.Errorf("simulasi smtp gagal")
+		}
+		return nil
+	}
+
+	recipients := []models.BroadcastRecipient{
+		{Name: "Andi", Email: "andi@example.com"},
+		{Name: "Gagal", Email: "fail@example.com"},
+		{Name: "Siti", Email: "siti@example.com"},
+	}
+
+	done := make(chan [2]int, 1)
+	SendBroadcastBatchAsync(models.CreateBroadcastRequest{
+		Category: "ANNOUNCEMENT",
+		Subject:  "Pengumuman Penting",
+		Headline: "Informasi Konser",
+		BodyText: "Halo {{name}}",
+	}, "Konser Klasik", recipients, func(sent, failed int) {
+		done <- [2]int{sent, failed}
+	})
+
+	select {
+	case res := <-done:
+		if res[0] != 2 || res[1] != 1 {
+			t.Fatalf("Ekspektasi sent=2 failed=1, dapat sent=%d failed=%d", res[0], res[1])
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timeout menunggu SendBroadcastBatchAsync selesai")
+	}
+}
+
+func TestSendEmailViaSMTPWithError_StripsCRLFHeaderInjection(t *testing.T) {
+	origSender := emailSender
+	defer func() {
+		emailSender = origSender
+	}()
+
+	var capturedMsg string
+	var capturedTo []string
+	emailSender = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		capturedTo = to
+		capturedMsg = string(msg)
+		return nil
+	}
+
+	err := sendEmailViaSMTPWithError(EmailJob{
+		To:      "victim@example.com\r\nBcc: evil@attacker.com",
+		Subject: "Promo\r\nBcc: evil@attacker.com",
+		Body:    "<p>Halo</p>",
+	})
+	if err != nil {
+		t.Fatalf("Ekspektasi nil error, dapat: %v", err)
+	}
+	if len(capturedTo) != 1 || strings.ContainsAny(capturedTo[0], "\r\n") {
+		t.Fatalf("Header To masih mengandung CRLF: %v", capturedTo)
+	}
+	if strings.Contains(capturedMsg, "\r\nBcc:") {
+		t.Fatalf("CRLF header injection berhasil lolos ke payload MIME: %s", capturedMsg)
+	}
+}
+
+func TestEmailTemplates_AlignedWithDesignSystem(t *testing.T) {
+	templates := []string{"eticket.html", "auth_otp.html", "refund_otp.html", "refund_status.html", "reminder.html"}
+	for _, name := range templates {
+		content, err := os.ReadFile("templates/" + name)
+		if err != nil {
+			t.Fatalf("Gagal membaca template %s: %v", name, err)
+		}
+		htmlStr := string(content)
+		if strings.Contains(htmlStr, "#0C0D12") || strings.Contains(htmlStr, "#14161F") {
+			t.Fatalf("Template %s masih menggunakan warna tema lama", name)
+		}
+		if !strings.Contains(htmlStr, "#F4F3EF") || !strings.Contains(htmlStr, "#141413") {
+			t.Fatalf("Template %s belum menggunakan palet design system (#F4F3EF / #141413)", name)
+		}
 	}
 }
