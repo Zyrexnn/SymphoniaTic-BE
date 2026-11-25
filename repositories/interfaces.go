@@ -42,6 +42,7 @@ var (
 	ErrStaffInactive          = errors.New("akun staf ini sedang dinonaktifkan oleh Super Admin")
 	ErrEventCancelled         = errors.New("acara konser ini telah dibatalkan oleh penyelenggara")
 	ErrEventAlreadyCancelled  = errors.New("konser sudah berstatus dibatalkan")
+	ErrOpenGateConflict       = errors.New("waktu open gate lama tidak lebih awal dari waktu konser baru")
 )
 
 type ErrOTPWrongCode struct {

@@ -144,3 +144,77 @@ func TestParseConcertDateTime(t *testing.T) {
 	}
 }
 
+func TestNormalizeDateAndTimeString(t *testing.T) {
+	dateCases := []struct {
+		name     string
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{"ISO YYYY-MM-DD", "2027-04-18", "Minggu, 18 April 2027", false},
+		{"Perbaikan nama hari salah", "Sabtu, 18 April 2027", "Minggu, 18 April 2027", false},
+		{"Format DMY slash", "25/04/2027", "Minggu, 25 April 2027", false},
+		{"Tanggal mustahil 31 Februari", "31 Februari 2027", "", true},
+		{"Tahun di luar rentang", "18 April 1899", "", true},
+	}
+
+	for _, tc := range dateCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := utils.NormalizeDateString(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Ekspektasi error untuk %q, dapat %q", tc.input, got)
+				}
+				return
+			}
+			if err != nil || got != tc.expected {
+				t.Fatalf("NormalizeDateString(%q) = (%q, %v), ekspektasi %q", tc.input, got, err, tc.expected)
+			}
+		})
+	}
+
+	timeCases := []struct {
+		name     string
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{"12h PM dengan titik", "7.30 PM", "19:30 WIB", false},
+		{"24h WITA", "20:00 WITA", "20:00 WITA", false},
+		{"Waktu invalid", "99:99", "", true},
+	}
+
+	for _, tc := range timeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := utils.NormalizeTimeString(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Ekspektasi error untuk %q, dapat %q", tc.input, got)
+				}
+				return
+			}
+			if err != nil || got != tc.expected {
+				t.Fatalf("NormalizeTimeString(%q) = (%q, %v), ekspektasi %q", tc.input, got, err, tc.expected)
+			}
+		})
+	}
+
+	t.Run("ParseConcertDateTime dengan zona WITA dan WIT", func(t *testing.T) {
+		dtWITA, err := utils.ParseConcertDateTime("18 April 2027", "20:00 WITA")
+		if err != nil {
+			t.Fatalf("ParseConcertDateTime WITA gagal: %v", err)
+		}
+		if _, offset := dtWITA.Zone(); offset != 8*3600 {
+			t.Fatalf("Ekspektasi offset WITA 28800, dapat %d", offset)
+		}
+
+		dtWIT, err := utils.ParseConcertDateTime("18 April 2027", "21:00 WIT")
+		if err != nil {
+			t.Fatalf("ParseConcertDateTime WIT gagal: %v", err)
+		}
+		if _, offset := dtWIT.Zone(); offset != 9*3600 {
+			t.Fatalf("Ekspektasi offset WIT 32400, dapat %d", offset)
+		}
+	})
+}
+

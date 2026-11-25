@@ -400,6 +400,7 @@ func TestEventController_UpdateEvent(t *testing.T) {
 		payload := models.UpdateEventRequest{
 			Title:    "Judul Konser Baru Diperbarui",
 			Venue:    "Aula Simfonia Lantai 2",
+			Date:     "Minggu, 18 April 2027",
 			Time:     "19:30 WIB",
 			OpenGate: "18:00 WIB",
 		}
@@ -448,6 +449,7 @@ func TestEventController_UpdateEvent(t *testing.T) {
 		app := setupEventControllerTest(mockRepo)
 		payload := models.UpdateEventRequest{
 			Title:    "Judul Baru",
+			Date:     "Minggu, 18 April 2027",
 			Time:     "19:30 WIB",
 			OpenGate: "18:00 WIB",
 		}
@@ -997,6 +999,99 @@ func TestEventController_LifecycleActions(t *testing.T) {
 		}
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("Ekspektasi 400 Bad Request, dapat %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("RescheduleEvent Gagal (400 Bad Request) jika tanggal/waktu/openGate tidak valid", func(t *testing.T) {
+		mockRepo := &repositories.MockEventRepository{}
+		app := setupEventControllerTest(mockRepo)
+
+		invalidPayloads := []models.RescheduleEventRequest{
+			{NewDate: "Tanggal Rahasia", NewTime: "20:00 WIB", Reason: "Test"},
+			{NewDate: "2027-04-25", NewTime: "99:99", Reason: "Test"},
+			{NewDate: "2027-04-25", NewTime: "20:00 WIB", NewOpenGate: "21:00 WIB", Reason: "Test"},
+		}
+		for _, p := range invalidPayloads {
+			bodyBytes, _ := json.Marshal(p)
+			req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/reschedule", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := app.Test(req, -1)
+			if err != nil {
+				t.Fatalf("Gagal mengirim request: %v", err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("Ekspektasi 400 untuk payload %+v, dapat %d", p, resp.StatusCode)
+			}
+		}
+	})
+
+	t.Run("RescheduleEvent menormalkan tanggal dan jam sebelum dikirim ke repository", func(t *testing.T) {
+		var captured *models.RescheduleEventRequest
+		mockRepo := &repositories.MockEventRepository{
+			RescheduleEventFunc: func(ctx context.Context, id string, req *models.RescheduleEventRequest) (*models.EventItem, error) {
+				captured = req
+				return &models.EventItem{
+					ID:     id,
+					Status: "RESCHEDULED",
+					Date:   req.NewDate,
+					Time:   req.NewTime,
+				}, nil
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		bodyBytes, _ := json.Marshal(models.RescheduleEventRequest{
+			NewDate: "2027-04-25",
+			NewTime: "8.00 PM",
+			Reason:  "Penyesuaian jadwal",
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events/evt-1/reschedule", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("Ekspektasi 200 OK, dapat %d", resp.StatusCode)
+		}
+		if captured == nil || captured.NewDate != "Minggu, 25 April 2027" || captured.NewTime != "20:00 WIB" {
+			t.Fatalf("Hasil normalisasi tidak sesuai: %+v", captured)
+		}
+	})
+
+	t.Run("CreateEvent menormalkan tanggal ISO ke format kanonik Indonesia", func(t *testing.T) {
+		var captured *models.CreateEventRequest
+		mockRepo := &repositories.MockEventRepository{
+			CreateEventFunc: func(ctx context.Context, req *models.CreateEventRequest) (*models.EventItem, error) {
+				captured = req
+				return &models.EventItem{
+					ID:       "evt-norm",
+					Title:    req.Title,
+					Date:     req.Date,
+					Time:     req.Time,
+					OpenGate: req.OpenGate,
+				}, nil
+			},
+		}
+		app := setupEventControllerTest(mockRepo)
+		bodyBytes, _ := json.Marshal(models.CreateEventRequest{
+			Title:    "Konser Akhir Tahun",
+			Artist:   "Jakarta Philharmonic",
+			Venue:    "Aula Simfonia",
+			Date:     "2026-12-30",
+			Time:     "19:30 WIB",
+			OpenGate: "18:00 WIB",
+		})
+		req := httptest.NewRequest("POST", "/api/v1/admin/events", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("Gagal mengirim request: %v", err)
+		}
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("Ekspektasi 201 Created, dapat %d", resp.StatusCode)
+		}
+		if captured == nil || captured.Date != "Rabu, 30 Desember 2026" {
+			t.Fatalf("Tanggal tidak dinormalisasi kanonik: %+v", captured)
 		}
 	})
 

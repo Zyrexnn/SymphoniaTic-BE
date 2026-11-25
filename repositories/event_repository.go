@@ -515,11 +515,16 @@ func (r *eventRepository) RescheduleEvent(ctx context.Context, id string, req *m
 	newOpenGate := strings.TrimSpace(req.NewOpenGate)
 	if newOpenGate == "" {
 		newOpenGate = currentOpenGate
+		if newOpenGate != "" {
+			if valid, isBefore := utils.IsTimeBefore(newOpenGate, newTime); !valid || !isBefore {
+				return nil, ErrOpenGateConflict
+			}
+		}
 	}
 
-	var parsedDT interface{}
-	if dt, err := utils.ParseConcertDateTime(newDate, newTime); err == nil && !dt.IsZero() {
-		parsedDT = dt
+	parsedDT, err := utils.ParseConcertDateTime(newDate, newTime)
+	if err != nil || parsedDT.IsZero() {
+		return nil, fmt.Errorf("gagal memparsing jadwal baru konser: %w", err)
 	}
 
 	_, err = tx.ExecContext(ctx, `
@@ -529,7 +534,7 @@ func (r *eventRepository) RescheduleEvent(ctx context.Context, id string, req *m
 		    date = $4,
 		    time = $5,
 		    open_gate = $6,
-		    event_date_time = COALESCE($7, event_date_time),
+		    event_date_time = $7,
 		    reschedule_reason = $8,
 		    status = 'RESCHEDULED',
 		    status_updated_at = NOW()
@@ -707,7 +712,7 @@ func (r *eventRepository) UpdateCategory(ctx context.Context, catID string, req 
 		newRemaining = req.Quota - bookedCount
 	}
 
-	_, err = tx.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `     
 		UPDATE ticket_categories
 		SET name = $1, price = $2, quota = $3, remaining_quota = $4
 		WHERE id = $5

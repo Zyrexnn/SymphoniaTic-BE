@@ -93,23 +93,52 @@ func (c *EventController) GetEventSeats(ctx *fiber.Ctx) error {
 	return utils.ResponseOK(ctx, "Berhasil mengambil daftar kursi konser", seats)
 }
 
-func validateEventSchedule(date, openGate, eventTime string, rundown []models.RundownItem, salesEndAt *time.Time) string {
-	if strings.TrimSpace(openGate) == "" {
+func normalizeEventSchedule(date, eventTime, openGate *string, rundown []models.RundownItem, salesEndAt *time.Time) string {
+	if strings.TrimSpace(*openGate) == "" {
 		return "Waktu Open Gate wajib diisi"
 	}
 
-	if valid, isBefore := utils.IsTimeBefore(openGate, eventTime); valid && !isBefore {
+	normDate, err := utils.NormalizeDateString(*date)
+	if err != nil {
+		return "Format tanggal konser tidak valid. Gunakan format seperti Minggu, 18 April 2027"
+	}
+	*date = normDate
+
+	normTime, err := utils.NormalizeTimeString(*eventTime)
+	if err != nil {
+		return "Format waktu konser tidak valid. Gunakan format HH:MM WIB"
+	}
+	*eventTime = normTime
+
+	normGate, err := utils.NormalizeTimeString(*openGate)
+	if err != nil {
+		return "Format waktu Open Gate tidak valid. Gunakan format HH:MM WIB"
+	}
+	*openGate = normGate
+
+	_, timeZone, _ := utils.ParseTimeWithZone(*eventTime)
+	_, gateZone, _ := utils.ParseTimeWithZone(*openGate)
+	if gateZone != timeZone {
+		return "Zona waktu Open Gate harus sama dengan waktu konser"
+	}
+
+	if valid, isBefore := utils.IsTimeBefore(*openGate, *eventTime); !valid || !isBefore {
 		return "Waktu Open Gate harus lebih awal dari waktu mulai pertunjukan konser"
 	}
 
-	for _, item := range rundown {
-		if strings.TrimSpace(item.Time) == "" || strings.TrimSpace(item.Activity) == "" {
+	for i := range rundown {
+		if strings.TrimSpace(rundown[i].Time) == "" || strings.TrimSpace(rundown[i].Activity) == "" {
 			return "Setiap item rundown wajib memiliki waktu dan aktivitas"
 		}
+		normItemTime, itemErr := utils.NormalizeTimeString(rundown[i].Time)
+		if itemErr != nil {
+			return fmt.Sprintf("Format waktu rundown baris %d tidak valid. Gunakan format HH:MM WIB", i+1)
+		}
+		rundown[i].Time = normItemTime
 	}
 
 	if salesEndAt != nil && !salesEndAt.IsZero() {
-		if concertDT, err := utils.ParseConcertDateTime(date, eventTime); err == nil && !concertDT.IsZero() {
+		if concertDT, parseErr := utils.ParseConcertDateTime(*date, *eventTime); parseErr == nil && !concertDT.IsZero() {
 			if salesEndAt.After(concertDT) {
 				return "Batas waktu penjualan tiket tidak boleh melebihi waktu mulai konser"
 			}
@@ -147,7 +176,7 @@ func (c *EventController) CreateEvent(ctx *fiber.Ctx) error {
 		})
 	}
 
-	if errMsg := validateEventSchedule(createEventReq.Date, createEventReq.OpenGate, createEventReq.Time, createEventReq.Rundown, createEventReq.SalesEndAt); errMsg != "" {
+	if errMsg := normalizeEventSchedule(&createEventReq.Date, &createEventReq.Time, &createEventReq.OpenGate, createEventReq.Rundown, createEventReq.SalesEndAt); errMsg != "" {
 		return utils.ResponseBadRequest(ctx, errMsg)
 	}
 
@@ -198,7 +227,7 @@ func (c *EventController) UpdateEvent(ctx *fiber.Ctx) error {
 		})
 	}
 
-	if errMsg := validateEventSchedule(updateEventReq.Date, updateEventReq.OpenGate, updateEventReq.Time, updateEventReq.Rundown, updateEventReq.SalesEndAt); errMsg != "" {
+	if errMsg := normalizeEventSchedule(&updateEventReq.Date, &updateEventReq.Time, &updateEventReq.OpenGate, updateEventReq.Rundown, updateEventReq.SalesEndAt); errMsg != "" {
 		return utils.ResponseBadRequest(ctx, errMsg)
 	}
 
@@ -384,12 +413,42 @@ func (c *EventController) RescheduleEvent(ctx *fiber.Ctx) error {
 
 	req.NewDate = strings.TrimSpace(req.NewDate)
 	req.NewTime = strings.TrimSpace(req.NewTime)
+	req.NewOpenGate = strings.TrimSpace(req.NewOpenGate)
 	req.Reason = strings.TrimSpace(req.Reason)
 	if req.NewDate == "" || req.NewTime == "" || req.Reason == "" {
 		return ctx.Status(fiber.StatusBadRequest).JSON(models.APIResponse{
 			Success: false,
 			Message: "Tanggal baru, waktu baru, dan alasan pengunduran jadwal wajib diisi",
 		})
+	}
+
+	normDate, err := utils.NormalizeDateString(req.NewDate)
+	if err != nil {
+		return utils.ResponseBadRequest(ctx, "Format tanggal konser tidak valid. Gunakan format seperti Minggu, 18 April 2027")
+	}
+	req.NewDate = normDate
+
+	normTime, err := utils.NormalizeTimeString(req.NewTime)
+	if err != nil {
+		return utils.ResponseBadRequest(ctx, "Format waktu konser tidak valid. Gunakan format HH:MM WIB")
+	}
+	req.NewTime = normTime
+
+	if req.NewOpenGate != "" {
+		normGate, gateErr := utils.NormalizeTimeString(req.NewOpenGate)
+		if gateErr != nil {
+			return utils.ResponseBadRequest(ctx, "Format waktu Open Gate tidak valid. Gunakan format HH:MM WIB")
+		}
+		req.NewOpenGate = normGate
+
+		_, timeZone, _ := utils.ParseTimeWithZone(req.NewTime)
+		_, gateZone, _ := utils.ParseTimeWithZone(req.NewOpenGate)
+		if gateZone != timeZone {
+			return utils.ResponseBadRequest(ctx, "Zona waktu Open Gate harus sama dengan waktu konser")
+		}
+		if valid, isBefore := utils.IsTimeBefore(req.NewOpenGate, req.NewTime); !valid || !isBefore {
+			return utils.ResponseBadRequest(ctx, "Waktu Open Gate harus lebih awal dari waktu mulai pertunjukan konser")
+		}
 	}
 
 	updatedEvent, err := c.repo.RescheduleEvent(ctx.Context(), eventID, &req)
@@ -405,6 +464,9 @@ func (c *EventController) RescheduleEvent(ctx *fiber.Ctx) error {
 				Success: false,
 				Message: "Konser yang sudah dibatalkan tidak dapat dijadwalkan ulang",
 			})
+		}
+		if errors.Is(err, repositories.ErrOpenGateConflict) {
+			return utils.ResponseBadRequest(ctx, "Waktu Open Gate lama tidak sesuai dengan jam konser baru. Isi Waktu Open Gate baru.")
 		}
 		return ctx.Status(fiber.StatusInternalServerError).JSON(models.APIResponse{
 			Success: false,
