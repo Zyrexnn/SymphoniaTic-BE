@@ -600,7 +600,8 @@ func TestEventController_ToggleEventClose(t *testing.T) {
 
 		app := setupEventControllerTest(mockRepo)
 		req := httptest.NewRequest("PATCH", "/api/v1/admin/events/evt-404/toggle-close", nil)
-		resp, err := app.Test(req, -1)
+		
+resp, err := app.Test(req, -1)
 		if err != nil {
 			t.Fatalf("Gagal mengirim HTTP request: %v", err)
 		}

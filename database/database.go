@@ -735,3 +735,4 @@ func ensureEventSeatsInitialized() {
 	nextEvent:
 	}
 }
+
